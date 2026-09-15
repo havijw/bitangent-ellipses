@@ -499,13 +499,22 @@ export class EllipseFamily {
       us.push(u);
       fs.push(f(u));
     }
+    // A sign change of `rx(u) - value` is only a genuine root where `rx` is a
+    // continuous, well-conditioned function of `u`. Near the parabola boundary
+    // `rx` diverges, and near the chord-collapse end the ellipse degenerates
+    // (ry -> 0) and the computed radius jitters, so a bracket can straddle a
+    // pole or numerical noise rather than a real crossing. Bisection would then
+    // converge to that artifact and hand back an ellipse whose radius isn't the
+    // requested value. Accept a candidate only if it actually hits the target.
+    const accept = (s) =>
+      s.ellipse && Math.abs(s.ellipse[which] - value) <= 1e-6 * value ? out.push(s) : null;
     const out = [];
     for (let i = 0; i < N; i++) {
       const f0 = fs[i];
       const f1 = fs[i + 1];
       if (Number.isNaN(f0) || Number.isNaN(f1)) continue;
       if (f0 === 0) {
-        out.push(this.atApex(aFromU(us[i])));
+        accept(this.atApex(aFromU(us[i])));
         continue;
       }
       if (f0 * f1 < 0) {
@@ -525,15 +534,26 @@ export class EllipseFamily {
             flo = fm;
           }
         }
-        out.push(this.atApex(aFromU((lo + hi) / 2)));
+        accept(this.atApex(aFromU((lo + hi) / 2)));
       }
     }
-    return sortByApex(out);
+    return sortByApex(dedupeByApex(out));
   }
 }
 
 function sortByApex(solutions) {
   return solutions.sort((x, y) => (x.a ?? 0) - (y.a ?? 0));
+}
+
+/** Drop solutions with a near-identical apex parameter (the same ellipse found twice). */
+function dedupeByApex(solutions) {
+  const sorted = sortByApex([...solutions]);
+  const out = [];
+  for (const s of sorted) {
+    const prev = out[out.length - 1];
+    if (!prev || Math.abs((s.a ?? 0) - (prev.a ?? 0)) > 1e-6) out.push(s);
+  }
+  return out;
 }
 
 function solveQuadratic(a, b, c) {

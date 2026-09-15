@@ -6,9 +6,10 @@
   "description": "Local dev tool: compute an ellipse through two points with given tangent slopes, with SVG arc export.",
   "scripts": {
     "test": "node --test",
+    "test:e2e": "node scripts/smoke.mjs",
     "serve": "node serve.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

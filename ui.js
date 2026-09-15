@@ -13,20 +13,31 @@
 
 import { EllipseFamily, EllipseInputError, ellipsePolyline } from './src/ellipse.js';
 import { chooseArc, arcPath, arcPathParameter } from './src/svg.js';
+import {
+  VIEW_W,
+  VIEW_H,
+  DEFAULT_VIEW,
+  defaultState,
+  withDefaults,
+  serializeState,
+  deserializeState,
+  decodeHash,
+  parsePoint,
+  parseNumber,
+  contentBounds,
+  fitView,
+  zoomView,
+  niceStep,
+} from './src/state.js';
 
 const svg = document.getElementById('canvas');
-const VIEW_W = 800;
-const VIEW_H = 600;
 const HANDLE_LEN = 70;
 
 // The visible window into world space, as an SVG viewBox. Panning shifts x/y;
 // zooming scales w/h about the cursor. It is deliberately kept out of `state`
 // (and the URL hash) so a shared configuration link doesn't pin the viewer to
 // whatever zoom the author happened to leave it at.
-const DEFAULT_VIEW = { x: 0, y: 0, w: VIEW_W, h: VIEW_H };
 let view = { ...DEFAULT_VIEW };
-const MIN_VIEW_W = 25; // closest zoom (world units across)
-const MAX_VIEW_W = 40000; // farthest zoom
 
 // World units per default unit; used to keep point/handle sizes and the
 // tangent-handle offset constant on screen regardless of zoom.
@@ -43,41 +54,17 @@ function applyView() {
 
 /** Zoom by `factor` (>1 zooms out) about a fixed screen fraction (fx, fy) in [0,1]. */
 function zoomAbout(factor, fx, fy) {
-  const anchorX = view.x + fx * view.w;
-  const anchorY = view.y + fy * view.h;
-  let newW = view.w * factor;
-  newW = Math.min(MAX_VIEW_W, Math.max(MIN_VIEW_W, newW));
-  const applied = newW / view.w;
-  const newH = view.h * applied;
-  view.x = anchorX - fx * newW;
-  view.y = anchorY - fy * newH;
-  view.w = newW;
-  view.h = newH;
+  view = zoomView(view, factor, fx, fy);
   render();
 }
 
-const DEFAULT_STATE = {
-  p0: { x: 160, y: 380 },
-  p1: { x: 560, y: 220 },
-  t0Deg: -35,
-  t1Deg: 20,
-  mode: 'roundest',
-  param: 0.3,
-  paramPoint: { x: 380, y: 420 },
-  yUp: false,
-  arcChoice: null, // 'small' | 'large' | null (null = follow the signed tangent)
-  solutionIndex: 0,
-};
-
-// Key for the persisted configuration. Declared here (not down in the
-// persistence section) because `loadStateFromStorage` runs during module
-// init below, before a `const` defined lower in the file would be in scope.
+// Key for the persisted configuration.
 const STORAGE_KEY = 'ellipse-tool:state';
 
 // Restore the last configuration on load. A URL hash wins (so a shared link
 // pins its own state), then the browser's localStorage (so reopening the bare
 // page picks up where you left off), and finally the built-in defaults.
-let state = { ...structuredClone(DEFAULT_STATE), ...(loadStateFromHash() ?? loadStateFromStorage() ?? {}) };
+let state = withDefaults(loadStateFromHash() ?? loadStateFromStorage());
 
 // ---------------------------------------------------------------------------
 // SVG scaffolding (built once; contents of the dynamic groups get replaced)
@@ -97,14 +84,6 @@ const ellipseGroup = el('g'); // dashed full ellipse
 const arcGroup = el('g'); // solid arc overlay
 const handlesGroup = el('g'); // draggable points/handles
 svg.append(gridGroup, staticGroup, ellipseGroup, arcGroup, handlesGroup);
-
-/** A "nice" grid spacing (1/2/5 x 10^n) giving roughly `divisions` lines across a span. */
-function niceStep(span, divisions = 16) {
-  const target = span / divisions;
-  const pow = Math.pow(10, Math.floor(Math.log10(target)));
-  for (const m of [1, 2, 5, 10]) if (m * pow >= target) return m * pow;
-  return 10 * pow;
-}
 
 function drawGrid() {
   gridGroup.innerHTML = '';
@@ -440,23 +419,23 @@ function syncControlsFromState() {
 }
 
 document.getElementById('p0-xy').addEventListener('change', (e) => {
-  const [x, y] = e.target.value.split(',').map(Number);
-  if (Number.isFinite(x) && Number.isFinite(y)) state.p0 = { x, y };
+  const p = parsePoint(e.target.value);
+  if (p) state.p0 = p;
   render();
 });
 document.getElementById('p1-xy').addEventListener('change', (e) => {
-  const [x, y] = e.target.value.split(',').map(Number);
-  if (Number.isFinite(x) && Number.isFinite(y)) state.p1 = { x, y };
+  const p = parsePoint(e.target.value);
+  if (p) state.p1 = p;
   render();
 });
 document.getElementById('t0-deg').addEventListener('change', (e) => {
-  const v = Number(e.target.value);
-  if (Number.isFinite(v)) state.t0Deg = v;
+  const v = parseNumber(e.target.value);
+  if (v !== null) state.t0Deg = v;
   render();
 });
 document.getElementById('t1-deg').addEventListener('change', (e) => {
-  const v = Number(e.target.value);
-  if (Number.isFinite(v)) state.t1Deg = v;
+  const v = parseNumber(e.target.value);
+  if (v !== null) state.t1Deg = v;
   render();
 });
 
@@ -477,8 +456,8 @@ document.getElementById('param-range').addEventListener('input', (e) => {
   render();
 });
 document.getElementById('param-text').addEventListener('input', (e) => {
-  const v = Number(e.target.value);
-  if (Number.isFinite(v)) {
+  const v = parseNumber(e.target.value);
+  if (v !== null) {
     state.param = v;
     state.solutionIndex = 0;
     render();
@@ -508,7 +487,7 @@ document.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
 });
 
 document.getElementById('reset-btn').addEventListener('click', () => {
-  state = structuredClone(DEFAULT_STATE);
+  state = defaultState();
   render(); // solve the defaults so fitToContent has geometry to frame
   fitToContent();
 });
@@ -584,75 +563,11 @@ svg.addEventListener(
   { passive: false },
 );
 
-// Fraction of the content span added as margin on every side when fitting.
-const FIT_PAD = 0.12;
-
-/**
- * Bounding box (in world coordinates) of everything worth showing: both
- * points, the third point when in "through" mode, and the current ellipse's
- * axis-aligned extent. Returns null if there is nothing finite to frame.
- */
-function contentBounds() {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  const add = (x, y) => {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  };
-  add(state.p0.x, state.p0.y);
-  add(state.p1.x, state.p1.y);
-  if (state.mode === 'through') add(state.paramPoint.x, state.paramPoint.y);
-  if (lastEllipse) {
-    const e = lastEllipse;
-    // Half-extents of a rotated ellipse's axis-aligned bounding box.
-    const hx = Math.hypot(e.rx * Math.cos(e.theta), e.ry * Math.sin(e.theta));
-    const hy = Math.hypot(e.rx * Math.sin(e.theta), e.ry * Math.cos(e.theta));
-    add(e.cx - hx, e.cy - hy);
-    add(e.cx + hx, e.cy + hy);
-  }
-  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
-}
-
 /** Frame the current geometry: centered, padded, at the canvas aspect ratio. */
 function fitToContent() {
-  const b = contentBounds();
-  if (!b) {
-    view = { ...DEFAULT_VIEW };
-    render();
-    return;
-  }
-  const cx = (b.minX + b.maxX) / 2;
-  const cy = (b.minY + b.maxY) / 2;
-  // Pad, and guard against a zero-area box (e.g. coincident points).
-  let cw = (b.maxX - b.minX) * (1 + 2 * FIT_PAD) || VIEW_W;
-  let ch = (b.maxY - b.minY) * (1 + 2 * FIT_PAD) || VIEW_H;
-
-  // Grow the shorter dimension so the box matches the canvas aspect ratio;
-  // this keeps the content centered and fully visible without letterboxing.
   const rect = svg.getBoundingClientRect();
   const aspect = rect.width && rect.height ? rect.width / rect.height : VIEW_W / VIEW_H;
-  let w;
-  let h;
-  if (cw / ch > aspect) {
-    w = cw;
-    h = cw / aspect;
-  } else {
-    h = ch;
-    w = ch * aspect;
-  }
-
-  // Respect the zoom clamps, scaling both axes together to preserve aspect.
-  const clamped = Math.min(MAX_VIEW_W, Math.max(MIN_VIEW_W, w));
-  if (clamped !== w) {
-    h *= clamped / w;
-    w = clamped;
-  }
-  view = { x: cx - w / 2, y: cy - h / 2, w, h };
+  view = fitView(contentBounds(state, lastEllipse), aspect);
   render();
 }
 
@@ -662,12 +577,13 @@ document.getElementById('zoom-out').addEventListener('click', () => zoomAbout(1.
 document.getElementById('zoom-reset').addEventListener('click', fitToContent);
 
 // ---------------------------------------------------------------------------
-// Persistence: URL hash (for sharing) + localStorage (across sessions)
-// STORAGE_KEY is declared near the top of the file, ahead of module init.
+// Persistence: URL hash (for sharing) + localStorage (across sessions).
+// The (de)serialization is pure and lives in src/state.js; this is only the
+// browser wiring (history, location, localStorage) around it.
 // ---------------------------------------------------------------------------
 
 function saveState() {
-  const json = JSON.stringify(state);
+  const json = serializeState(state);
   history.replaceState(null, '', `#${encodeURIComponent(json)}`);
   try {
     localStorage.setItem(STORAGE_KEY, json);
@@ -677,19 +593,12 @@ function saveState() {
 }
 
 function loadStateFromHash() {
-  try {
-    const raw = location.hash.slice(1);
-    if (!raw) return null;
-    return JSON.parse(decodeURIComponent(raw));
-  } catch {
-    return null;
-  }
+  return decodeHash(location.hash.slice(1));
 }
 
 function loadStateFromStorage() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return deserializeState(localStorage.getItem(STORAGE_KEY));
   } catch {
     return null;
   }

@@ -6,17 +6,19 @@ numbers you actually need to draw it: **rx, ry, and rotation angle**. It also
 exports the connecting arc as an SVG `<path>` with a relative `a` command.
 
 A zero-dependency project: pure JavaScript (Node's built-in test runner, a
-~20-line static file server, no bundler, no npm installs).
+~20-line static file server, no bundler, no npm installs). Needs Node 22+.
 
 ```
 ellipse-tool/
-  src/ellipse.js   pure math: the conic family, solvers, ellipse geometry
-  src/svg.js       SVG arc-flag computation and path/markup builders
-  ui.js            browser UI logic (imports src/ellipse.js and src/svg.js)
-  index.html       the UI's page shell
-  serve.js         static file server (needed because browsers block ES
-                    module imports from file://)
-  test/            node:test suites for both modules
+  src/ellipse.js     pure math: the conic family, solvers, ellipse geometry
+  src/svg.js         SVG arc-flag computation and path/markup builders
+  src/state.js       pure UI logic: state (de)serialization, input parsing, view math
+  ui.js              browser wiring (DOM + events); pure logic lives in src/state.js
+  index.html         the UI's page shell
+  serve.js           static file server (needed because browsers block ES
+                      module imports from file://)
+  test/              node:test suites (auto-run by `node --test`)
+  scripts/smoke.mjs  headless-browser smoke test (opt-in; see Tests)
 ```
 
 ## Why there's more than one answer
@@ -77,9 +79,8 @@ fifth-constraint mode in the sidebar. The dashed curve is the full analytic
 ellipse and the solid arc is the same shape built independently through the
 SVG path math — if they don't coincide exactly, something's wrong. The
 sidebar's export boxes give the arc two ways: as an ARC path parameter object
-(JSON matching Benchling's antibody format visualization
-`_ARC_PATH_PARAMETER_SCHEMA`, with `rx`/`ry`, the `(dx, dy)` offset,
-`rotation`, `direction`, and `arc_size`) and as the raw relative SVG path. The
+(JSON with `rx`/`ry`, the `(dx, dy)` offset, `rotation`, `direction`, and
+`arc_size`) and as the raw relative SVG path. The
 current configuration is saved in the URL hash, so a specific setup can be
 bookmarked or shared as a link. It is also stored in the browser's
 localStorage, so reopening the page later restores your last setup even
@@ -98,10 +99,20 @@ exact to full double precision.
 ## Tests
 
 ```
-node --test        # or: npm test
+node --test        # or: npm test — the unit suites, no browser
+npm run test:e2e   # headless-browser smoke test (opt-in)
 ```
 
-Covers the conic math (round-tripping a known ellipse through two sampled
-points and a third, each solver mode, degenerate/parabola/hyperbola
-classification, parallel tangents) and the SVG export (arc endpoints,
-small-vs-large-arc sidedness, signed-tangent arc selection, the y-up flip).
+The unit suites cover the conic math (round-tripping a known ellipse through
+two sampled points and a third, each solver mode, degenerate/parabola/hyperbola
+classification, parallel tangents), the SVG export (arc endpoints,
+small-vs-large-arc sidedness, signed-tangent arc selection, the y-up flip, and
+that every exported arc lies on the analytic ellipse across all modes — the
+numerical form of the overlay self-check), and the pure UI logic in
+`src/state.js` (state round-tripping, input parsing, view framing and zoom).
+
+`npm run test:e2e` boots the page in a headless Chromium over the DevTools
+Protocol and asserts it loads, solves, and exports without a page error —
+catching module-init regressions that leave the unit tests green. It needs a
+Chromium/Chrome binary (set `CHROMIUM_PATH` if it's not in a standard
+location) and self-skips with exit 0 when none is found.

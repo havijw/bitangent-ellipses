@@ -1,0 +1,12 @@
+# This is a zero-dependency project — there should never be a node_modules,
+# but ignore it defensively so a stray `npm install` can't get committed.
+node_modules/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# Scratch output (e.g. hand-run `--svg > out.svg`, temp SVGs)
+/out.svg
+*.tmp

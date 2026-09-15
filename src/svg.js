@@ -104,12 +104,11 @@ export function arcPath(ellipse, p0, p1, arc, { yUp = false } = {}) {
 }
 
 /**
- * Express the arc as an ARC path parameter object matching Benchling's antibody
- * format visualization schema (`_ARC_PATH_PARAMETER_SCHEMA`): a relative arc
- * given by `rx`/`ry`, the `(dx, dy)` offset from the start point, the x-axis
- * `rotation` in degrees, and enum `direction`/`arc_size`. The numbers mirror
- * `arcPath` exactly (same coordinate handling), so the object and the SVG `a`
- * command always agree.
+ * Express the arc as an ARC path parameter object: a relative arc given by
+ * `rx`/`ry`, the `(dx, dy)` offset from the start point, the x-axis `rotation`
+ * in degrees, and enum `direction`/`arc_size`. The numbers mirror `arcPath`
+ * exactly (same coordinate handling), so the object and the SVG `a` command
+ * always agree.
  *
  * `direction` follows SVG's sweep flag: sweep = 1 sweeps clockwise on a y-down
  * canvas, so 1 -> CLOCKWISE and 0 -> COUNTER_CLOCKWISE. `arc_size` follows the
