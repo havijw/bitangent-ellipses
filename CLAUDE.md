@@ -29,7 +29,8 @@ src/ui/scene.js  canvas drawing: grid, tangents/chord, ellipse, arc, handles
 src/ui/panels.js sidebar: results readout, SVG export boxes, control sync
 ui.js            the orchestrator: owns state + view, runs the render/solve
                  cycle, wires events, and drives src/ui/* with what they need
-index.html       the UI's page shell
+index.html       the UI's page shell; carries a `<link rel="modulepreload">`
+                 for every module in the graph — keep it in sync with src/
 serve.js         ~20-line static file server (browsers block ES imports over file://)
 scripts/smoke.mjs  headless-browser smoke test (opt-in; not run by `node --test`)
 test/            node:test suites (everything here IS auto-run by `node --test`)

@@ -3,6 +3,17 @@
 <head>
 <meta charset="utf-8" />
 <title>Ellipse from two tangents</title>
+<!-- Preload the whole ES-module graph so the browser fetches it in parallel
+     instead of discovering each import one wave at a time (a latency
+     waterfall). Keep this list in sync with the actual modules under src/. -->
+<link rel="modulepreload" href="./ui.js" />
+<link rel="modulepreload" href="./src/ellipse.js" />
+<link rel="modulepreload" href="./src/svg.js" />
+<link rel="modulepreload" href="./src/state.js" />
+<link rel="modulepreload" href="./src/format.js" />
+<link rel="modulepreload" href="./src/ui/dom.js" />
+<link rel="modulepreload" href="./src/ui/scene.js" />
+<link rel="modulepreload" href="./src/ui/panels.js" />
 <style>
   :root {
     color-scheme: light dark;
