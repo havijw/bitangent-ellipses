@@ -361,6 +361,7 @@ function renderResults(solutions, index = 0) {
     document.getElementById('cycle-solution').addEventListener('click', () => {
       state.solutionIndex = (index + 1) % solutions.length;
       render();
+      commitHistory();
     });
   }
 }
@@ -451,25 +452,113 @@ function syncControlsFromState() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Undo / redo
+// ---------------------------------------------------------------------------
+// Tracks the geometry and fifth-constraint controls: the two points, the two
+// tangent angles, the constraint mode, its parameter (slider/text or third
+// point), and which solution is selected. The SVG-export controls (y-up and
+// the small/large arc toggle) are intentionally excluded, so undoing a point
+// move never quietly flips your export settings.
+//
+// Continuous gestures (dragging a handle, sliding the apex range) fire render
+// on every step but commit a single history entry when the gesture ends, so
+// one drag is one undo — not hundreds.
+
+const TRACKED_KEYS = ['p0', 'p1', 't0Deg', 't1Deg', 'mode', 'param', 'paramPoint', 'solutionIndex'];
+let historyStack = [];
+let historyIndex = -1;
+const MAX_HISTORY = 200;
+
+/** Serialize just the tracked slice of state (used as a history snapshot). */
+function trackedSnapshot() {
+  const slice = {};
+  for (const k of TRACKED_KEYS) slice[k] = state[k];
+  return JSON.stringify(slice);
+}
+
+function initHistory() {
+  historyStack = [trackedSnapshot()];
+  historyIndex = 0;
+  updateHistoryButtons();
+}
+
+/** Record the current tracked state as a new history entry, if it changed. */
+function commitHistory() {
+  const snap = trackedSnapshot();
+  if (snap === historyStack[historyIndex]) return; // nothing tracked changed
+  // Drop any redo branch, then append.
+  historyStack.length = historyIndex + 1;
+  historyStack.push(snap);
+  if (historyStack.length > MAX_HISTORY) historyStack.shift();
+  historyIndex = historyStack.length - 1;
+  updateHistoryButtons();
+}
+
+/** Overlay the tracked slice at `historyIndex` onto the live state and redraw. */
+function applyHistoryEntry() {
+  Object.assign(state, JSON.parse(historyStack[historyIndex]));
+  render();
+  updateHistoryButtons();
+}
+
+function undo() {
+  if (historyIndex <= 0) return;
+  historyIndex--;
+  applyHistoryEntry();
+}
+
+function redo() {
+  if (historyIndex >= historyStack.length - 1) return;
+  historyIndex++;
+  applyHistoryEntry();
+}
+
+function updateHistoryButtons() {
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+  if (undoBtn) undoBtn.disabled = historyIndex <= 0;
+  if (redoBtn) redoBtn.disabled = historyIndex >= historyStack.length - 1;
+}
+
+document.getElementById('undo-btn').addEventListener('click', undo);
+document.getElementById('redo-btn').addEventListener('click', redo);
+
+document.addEventListener('keydown', (e) => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  if (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'y') return;
+  // Leave native text-editing undo alone while a field is focused.
+  const t = document.activeElement;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  e.preventDefault();
+  const isRedo = e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey);
+  if (isRedo) redo();
+  else undo();
+});
+
 document.getElementById('p0-xy').addEventListener('change', (e) => {
   const p = parsePoint(e.target.value);
   if (p) state.p0 = p;
   render();
+  commitHistory();
 });
 document.getElementById('p1-xy').addEventListener('change', (e) => {
   const p = parsePoint(e.target.value);
   if (p) state.p1 = p;
   render();
+  commitHistory();
 });
 document.getElementById('t0-deg').addEventListener('change', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) state.t0Deg = v;
   render();
+  commitHistory();
 });
 document.getElementById('t1-deg').addEventListener('change', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) state.t1Deg = v;
   render();
+  commitHistory();
 });
 
 document.getElementById('mode-buttons').addEventListener('click', (e) => {
@@ -481,6 +570,7 @@ document.getElementById('mode-buttons').addEventListener('click', (e) => {
     state.param = 0.3;
   }
   render();
+  commitHistory();
 });
 
 document.getElementById('param-range').addEventListener('input', (e) => {
@@ -488,6 +578,8 @@ document.getElementById('param-range').addEventListener('input', (e) => {
   state.solutionIndex = 0;
   render();
 });
+// Commit one history entry when the slider is released, not per step.
+document.getElementById('param-range').addEventListener('change', commitHistory);
 document.getElementById('param-text').addEventListener('input', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) {
@@ -496,6 +588,7 @@ document.getElementById('param-text').addEventListener('input', (e) => {
     render();
   }
 });
+document.getElementById('param-text').addEventListener('change', commitHistory);
 
 document.getElementById('yup-toggle').addEventListener('change', (e) => {
   state.yUp = e.target.checked;
@@ -523,6 +616,7 @@ document.getElementById('reset-btn').addEventListener('click', () => {
   state = defaultState();
   render(); // solve the defaults so fitToContent has geometry to frame
   fitToContent();
+  commitHistory();
 });
 
 // ---------------------------------------------------------------------------
@@ -578,9 +672,12 @@ svg.addEventListener('pointermove', (e) => {
 });
 
 function endPointer() {
+  const wasDragging = dragging !== null;
   dragging = null;
   panning = null;
   svg.classList.remove('dragging');
+  // One history entry per completed handle drag (panning doesn't touch state).
+  if (wasDragging) commitHistory();
 }
 svg.addEventListener('pointerup', endPointer);
 svg.addEventListener('pointercancel', endPointer);
@@ -641,3 +738,4 @@ function loadStateFromStorage() {
 
 render(); // solve first so the initial fit has geometry to frame
 fitToContent();
+initHistory(); // seed the undo stack with the starting configuration
