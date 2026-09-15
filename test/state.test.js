@@ -18,6 +18,7 @@ import {
   parseNumber,
   ellipseHalfExtents,
   contentBounds,
+  controlPointsBounds,
   fitView,
   zoomView,
   niceStep,
@@ -134,6 +135,49 @@ test('fitView clamps to the zoom limits while preserving aspect', () => {
   const huge = { minX: 0, minY: 0, maxX: 1e6, maxY: 1e6 };
   const w = fitView(huge, 1);
   assert.ok(w.w <= MAX_VIEW_W + 1e-9, 'clamped to the farthest zoom');
+});
+
+test('controlPointsBounds covers just the draggable points', () => {
+  const state = { ...DEFAULT_STATE, p0: { x: 10, y: 20 }, p1: { x: 40, y: 5 }, mode: 'roundest' };
+  assert.deepEqual(controlPointsBounds(state), { minX: 10, minY: 5, maxX: 40, maxY: 20 });
+  // The third point counts only in "through" mode.
+  const thru = { ...state, mode: 'through', paramPoint: { x: 100, y: 200 } };
+  assert.deepEqual(controlPointsBounds(thru), { minX: 10, minY: 5, maxX: 100, maxY: 200 });
+});
+
+test('fitView keeps the control points visible when a huge ellipse would push them off screen', () => {
+  // A very long ellipse whose center sits far from the two points. The content
+  // bounds are enormous, so the clamped view centered on that center would
+  // leave the points outside the frame.
+  const p0 = { x: 0, y: 0 };
+  const p1 = { x: 200, y: 40 };
+  const focus = { bounds: { minX: 0, minY: 0, maxX: 200, maxY: 40 }, anchor: p0 };
+  const bounds = { minX: -1e5, minY: -1e5, maxX: 1e5, maxY: 1e5 };
+  const v = fitView(bounds, 1, focus);
+  assert.ok(v.w <= MAX_VIEW_W + 1e-9, 'still clamped to the farthest zoom');
+  // Both control points fall inside the framed view.
+  assert.ok(v.x <= focus.bounds.minX && v.x + v.w >= focus.bounds.maxX, 'points x visible');
+  assert.ok(v.y <= focus.bounds.minY && v.y + v.h >= focus.bounds.maxY, 'points y visible');
+});
+
+test('fitView leaves normal content centered when everything fits', () => {
+  const bounds = { minX: 0, minY: 0, maxX: 200, maxY: 150 };
+  const focus = { bounds: { minX: 20, minY: 20, maxX: 40, maxY: 40 }, anchor: { x: 20, y: 20 } };
+  const withFocus = fitView(bounds, 4 / 3, focus);
+  const plain = fitView(bounds, 4 / 3);
+  // The focus fits within the content-centered view, so the framing is unchanged.
+  assert.deepEqual(withFocus, plain);
+});
+
+test('fitView falls back to the anchor point when the control points cannot both fit', () => {
+  // Points so far apart that even they exceed the farthest zoom span.
+  const p0 = { x: 0, y: 0 };
+  const focus = { bounds: { minX: 0, minY: 0, maxX: 1e6, maxY: 1e6 }, anchor: p0 };
+  const bounds = { minX: -1e7, minY: -1e7, maxX: 1e7, maxY: 1e7 };
+  const v = fitView(bounds, 1, focus);
+  // View is centered on the anchor (first point).
+  assert.ok(Math.abs(v.x + v.w / 2 - p0.x) < 1e-9, 'x-centered on anchor');
+  assert.ok(Math.abs(v.y + v.h / 2 - p0.y) < 1e-9, 'y-centered on anchor');
 });
 
 test('zoomView keeps the anchor point fixed on screen', () => {

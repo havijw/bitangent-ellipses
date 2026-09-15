@@ -25,6 +25,7 @@ import {
   parsePoint,
   parseNumber,
   contentBounds,
+  controlPointsBounds,
   fitView,
   zoomView,
   niceStep,
@@ -567,7 +568,8 @@ svg.addEventListener(
 function fitToContent() {
   const rect = svg.getBoundingClientRect();
   const aspect = rect.width && rect.height ? rect.width / rect.height : VIEW_W / VIEW_H;
-  view = fitView(contentBounds(state, lastEllipse), aspect);
+  const focus = { bounds: controlPointsBounds(state), anchor: state.p0 };
+  view = fitView(contentBounds(state, lastEllipse), aspect, focus);
   render();
 }
 

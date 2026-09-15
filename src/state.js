@@ -122,43 +122,81 @@ export function ellipseHalfExtents(e) {
   };
 }
 
-/**
- * Bounding box (world coordinates) of everything worth showing: both points,
- * the third point when in "through" mode, and the ellipse's axis-aligned
- * extent when one is supplied. Returns null if nothing finite is present.
- */
-export function contentBounds(state, ellipse) {
+/** A mutable bounding-box accumulator; `result()` yields null if nothing was added. */
+function makeBounds() {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  const add = (x, y) => {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
+  return {
+    add(x, y) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    },
+    result() {
+      return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+    },
   };
-  add(state.p0.x, state.p0.y);
-  add(state.p1.x, state.p1.y);
-  if (state.mode === 'through') add(state.paramPoint.x, state.paramPoint.y);
+}
+
+/**
+ * Bounding box (world coordinates) of just the draggable control points: both
+ * points, plus the third point in "through" mode. Returns null if none are
+ * finite. This is the "must stay visible" set when framing a huge ellipse.
+ */
+export function controlPointsBounds(state) {
+  const b = makeBounds();
+  b.add(state.p0.x, state.p0.y);
+  b.add(state.p1.x, state.p1.y);
+  if (state.mode === 'through') b.add(state.paramPoint.x, state.paramPoint.y);
+  return b.result();
+}
+
+/**
+ * Bounding box (world coordinates) of everything worth showing: the control
+ * points and the ellipse's axis-aligned extent when one is supplied. Returns
+ * null if nothing finite is present.
+ */
+export function contentBounds(state, ellipse) {
+  const b = makeBounds();
+  b.add(state.p0.x, state.p0.y);
+  b.add(state.p1.x, state.p1.y);
+  if (state.mode === 'through') b.add(state.paramPoint.x, state.paramPoint.y);
   if (ellipse) {
     const { hx, hy } = ellipseHalfExtents(ellipse);
-    add(ellipse.cx - hx, ellipse.cy - hy);
-    add(ellipse.cx + hx, ellipse.cy + hy);
+    b.add(ellipse.cx - hx, ellipse.cy - hy);
+    b.add(ellipse.cx + hx, ellipse.cy + hy);
   }
-  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+  return b.result();
+}
+
+/** Whether `box` fits entirely inside a `w`×`h` window centered at `(cx, cy)`. */
+function boxFitsAt(cx, cy, w, h, box) {
+  return (
+    box.minX >= cx - w / 2 &&
+    box.maxX <= cx + w / 2 &&
+    box.minY >= cy - h / 2 &&
+    box.maxY <= cy + h / 2
+  );
 }
 
 /**
  * Compute a viewBox `{x, y, w, h}` that frames `bounds` centered and padded at
  * the given canvas `aspect` (width / height), respecting the zoom clamps.
  * Falls back to the default view when there is nothing to frame.
+ *
+ * `focus` (optional) marks the geometry that must stay visible — the control
+ * points. Normally the view is centered on `bounds`, but when `bounds` is too
+ * big to fit at the farthest zoom, that center can push the control points off
+ * screen (a very long/large ellipse whose center is far from the points). In
+ * that case the view re-centers on the focus points, or, if even they can't
+ * both fit, on `focus.anchor` (the first point).
  */
-export function fitView(bounds, aspect) {
+export function fitView(bounds, aspect, focus = null) {
   if (!bounds) return { ...DEFAULT_VIEW };
-  const cx = (bounds.minX + bounds.maxX) / 2;
-  const cy = (bounds.minY + bounds.maxY) / 2;
   // Pad, and guard against a zero-area box (e.g. coincident points).
   const cw = (bounds.maxX - bounds.minX) * (1 + 2 * FIT_PAD) || VIEW_W;
   const ch = (bounds.maxY - bounds.minY) * (1 + 2 * FIT_PAD) || VIEW_H;
@@ -182,6 +220,28 @@ export function fitView(bounds, aspect) {
     h *= clamped / w;
     w = clamped;
   }
+
+  // Default: center on the content.
+  let cx = (bounds.minX + bounds.maxX) / 2;
+  let cy = (bounds.minY + bounds.maxY) / 2;
+
+  // If the content didn't fit and that left the control points outside the
+  // frame, re-center to keep them visible.
+  if (focus && focus.bounds && !boxFitsAt(cx, cy, w, h, focus.bounds)) {
+    const fcx = (focus.bounds.minX + focus.bounds.maxX) / 2;
+    const fcy = (focus.bounds.minY + focus.bounds.maxY) / 2;
+    if (boxFitsAt(fcx, fcy, w, h, focus.bounds)) {
+      cx = fcx;
+      cy = fcy;
+    } else if (focus.anchor) {
+      cx = focus.anchor.x;
+      cy = focus.anchor.y;
+    } else {
+      cx = fcx;
+      cy = fcy;
+    }
+  }
+
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 
