@@ -213,10 +213,40 @@ function showError(err) {
   box.style.display = 'block';
 }
 
+/**
+ * Clip the infinite line through `p` with unit direction `dir` to the current
+ * view rectangle (Liang–Barsky). Returns the two edge intersection points, or
+ * null if the line misses the view entirely. Handles axis-aligned (vertical or
+ * horizontal) directions.
+ */
+function clipLineToView(p, dir) {
+  const xmin = view.x;
+  const xmax = view.x + view.w;
+  const ymin = view.y;
+  const ymax = view.y + view.h;
+  const ps = [-dir.x, dir.x, -dir.y, dir.y];
+  const qs = [p.x - xmin, xmax - p.x, p.y - ymin, ymax - p.y];
+  let tmin = -Infinity;
+  let tmax = Infinity;
+  for (let i = 0; i < 4; i++) {
+    if (ps[i] === 0) {
+      if (qs[i] < 0) return null; // parallel to this edge and outside it
+    } else {
+      const t = qs[i] / ps[i];
+      if (ps[i] < 0) tmin = Math.max(tmin, t);
+      else tmax = Math.min(tmax, t);
+    }
+  }
+  if (tmin > tmax) return null;
+  return [
+    { x: p.x + dir.x * tmin, y: p.y + dir.y * tmin },
+    { x: p.x + dir.x * tmax, y: p.y + dir.y * tmax },
+  ];
+}
+
 function drawStaticGeometry(family) {
   staticGroup.innerHTML = '';
   if (!family) return;
-  const extend = (p, dir, len) => ({ x: p.x + dir.x * len, y: p.y + dir.y * len });
   const line = (a, b, color, dash) =>
     el('line', {
       x1: a.x,
@@ -228,12 +258,13 @@ function drawStaticGeometry(family) {
       'stroke-dasharray': dash,
     });
   staticGroup.appendChild(line(state.p0, state.p1, '#475569', '3 3'));
-  staticGroup.appendChild(
-    line(extend(state.p0, family.d0, -1000), extend(state.p0, family.d0, 1000), '#22c55e', '2 4'),
-  );
-  staticGroup.appendChild(
-    line(extend(state.p1, family.d1, -1000), extend(state.p1, family.d1, 1000), '#f87171', '2 4'),
-  );
+  // Draw each tangent as the segment where its infinite line crosses the
+  // current view, so it always spans the whole canvas at any zoom or pan
+  // rather than being a fixed (and eventually too-short) length.
+  const t0 = clipLineToView(state.p0, family.d0);
+  if (t0) staticGroup.appendChild(line(t0[0], t0[1], '#22c55e', '2 4'));
+  const t1 = clipLineToView(state.p1, family.d1);
+  if (t1) staticGroup.appendChild(line(t1[0], t1[1], '#f87171', '2 4'));
   if (state.mode === 'through') {
     staticGroup.appendChild(el('circle', { cx: state.paramPoint.x, cy: state.paramPoint.y, r: 5 * sizeScale, fill: '#facc15' }));
   }
