@@ -564,7 +564,19 @@ function solveQuadratic(a, b, c) {
     return [-c / b];
   }
   const disc = b * b - 4 * a * c;
-  if (disc < 0) return [];
+  if (disc < 0) {
+    // A discriminant that is negative only within rounding error of zero is a
+    // double root at a numerically flat extremum, not a genuine "no real
+    // solution". This is what "aspect ratio" hits when its target is carried
+    // over from "roundest": that value sits exactly at the family's minimum
+    // ratio, where the two roots coincide and disc(k) crosses zero, so
+    // floating-point noise can push the computed disc just below zero. Return
+    // the coincident root there; a truly out-of-range request (a ratio below
+    // the achievable minimum) stays negative by far more than rounding and
+    // still yields no solution.
+    if (-disc <= 1e-12 * (b * b + Math.abs(4 * a * c))) return [-b / (2 * a)];
+    return [];
+  }
   const sq = Math.sqrt(disc);
   // Stable form: avoid cancellation in the smaller root.
   const q = -(b + Math.sign(b || 1) * sq) / 2;

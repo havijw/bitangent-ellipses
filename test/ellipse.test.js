@@ -313,6 +313,24 @@ test('continuityParam reproduces the same ellipse across every value mode', () =
   }
 });
 
+// Regression: switching from "roundest" to "aspect ratio" (or any value mode)
+// carries the roundest ellipse's own ratio as the target. That value sits
+// exactly at the family's minimum ratio, where withAspectRatio's quadratic has
+// a double root and its discriminant crosses zero — floating-point noise there
+// once rounded the discriminant negative and produced "No ellipse satisfies
+// this constraint" for the very shape just being displayed. The re-solve must
+// reproduce the roundest ellipse rather than come back empty.
+test('continuityParam reproduces the roundest ellipse (ratio minimum boundary)', () => {
+  const family = defaultFamily();
+  const start = family.roundest();
+  for (const mode of ['ratio', 'rx', 'ry']) {
+    const carried = continuityParam(mode, start, family.p0, family.p1);
+    const got = resolve(family, mode, carried, start.a);
+    assert.ok(got && got.ellipse, `mode ${mode} produced no ellipse at the roundest ratio`);
+    assert.ok(sameEllipse(start.ellipse, got.ellipse), `mode ${mode} did not reproduce the roundest ellipse`);
+  }
+});
+
 test('continuityParam for through mode picks the small-arc midpoint, on the ellipse', () => {
   const family = defaultFamily();
   const start = family.atApex(0.3);
