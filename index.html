@@ -5,6 +5,7 @@
 <title>Ellipse from two tangents</title>
 <style>
   :root {
+    color-scheme: light dark;
     --bg: #0f172a;
     --panel: #1e293b;
     --panel-border: #334155;
@@ -14,7 +15,39 @@
     --accent-strong: #0ea5e9;
     --p0-color: #22c55e;
     --p1-color: #f87171;
-    --grid: #263449;
+    --grid: #1b2537;
+    /* Surfaces and accents that were previously hard-coded, pulled into
+       variables so the light theme below can override them in one place. */
+    --input-bg: #0f1729;
+    --on-accent: #04121c;
+    --overlay-bg: rgba(15, 23, 42, 0.85);
+    --overlay-shadow: rgba(0, 0, 0, 0.35);
+    --error-bg: #3f1d1d;
+    --error-border: #7f1d1d;
+    --error-text: #fecaca;
+  }
+  /* Follow the OS/browser setting: swap to a light palette when the machine
+     prefers light. Only the variables change; every rule below reads them. */
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --panel-border: #cbd5e1;
+      --text: #0f172a;
+      --text-dim: #64748b;
+      --accent: #0284c7;
+      --accent-strong: #0ea5e9;
+      --p0-color: #16a34a;
+      --p1-color: #ef4444;
+      --grid: #e2e8f0;
+      --input-bg: #f1f5f9;
+      --on-accent: #ffffff;
+      --overlay-bg: rgba(255, 255, 255, 0.9);
+      --overlay-shadow: rgba(15, 23, 42, 0.15);
+      --error-bg: #fef2f2;
+      --error-border: #fecaca;
+      --error-text: #b91c1c;
+    }
   }
   * { box-sizing: border-box; }
   body {
@@ -66,7 +99,7 @@
     height: 34px;
     border-radius: 8px;
     border: 1px solid var(--panel-border);
-    background: rgba(15, 23, 42, 0.85);
+    background: var(--overlay-bg);
     color: var(--text);
     font-size: 18px;
     line-height: 1;
@@ -103,7 +136,7 @@
   .row > .field { flex: 1; }
   input[type="text"], input[type="number"], select {
     width: 100%;
-    background: #0f1729;
+    background: var(--input-bg);
     border: 1px solid var(--panel-border);
     color: var(--text);
     border-radius: 6px;
@@ -118,13 +151,13 @@
     padding: 6px 4px;
     border-radius: 6px;
     border: 1px solid var(--panel-border);
-    background: #0f1729;
+    background: var(--input-bg);
     color: var(--text);
     cursor: pointer;
   }
-  .mode-buttons button.active { background: var(--accent-strong); border-color: var(--accent-strong); color: #04121c; font-weight: 600; }
+  .mode-buttons button.active { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); font-weight: 600; }
   .results {
-    background: #0f1729;
+    background: var(--input-bg);
     border: 1px solid var(--panel-border);
     border-radius: 8px;
     padding: 10px 12px;
@@ -135,9 +168,9 @@
   .result-row .label { font-size: 12px; color: var(--text-dim); }
   .result-row .value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .error-box {
-    background: #3f1d1d;
-    border: 1px solid #7f1d1d;
-    color: #fecaca;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
     border-radius: 8px;
     padding: 8px 10px;
     font-size: 12px;
@@ -147,7 +180,7 @@
     width: 100%;
     box-sizing: border-box;
     min-height: 56px;
-    background: #0f1729;
+    background: var(--input-bg);
     color: var(--text);
     border: 1px solid var(--panel-border);
     border-radius: 6px;
@@ -162,7 +195,7 @@
     padding: 4px 8px;
     border-radius: 5px;
     border: 1px solid var(--panel-border);
-    background: #0f1729;
+    background: var(--input-bg);
     color: var(--text-dim);
     cursor: pointer;
   }
@@ -176,11 +209,11 @@
     padding: 5px;
     border-radius: 6px;
     border: 1px solid var(--panel-border);
-    background: #0f1729;
+    background: var(--input-bg);
     color: var(--text);
     cursor: pointer;
   }
-  .arc-toggle button.active { background: var(--accent-strong); border-color: var(--accent-strong); color: #04121c; font-weight: 600; }
+  .arc-toggle button.active { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); font-weight: 600; }
   #reset-btn {
     width: 100%;
     margin-top: 4px;
@@ -188,7 +221,7 @@
     padding: 6px;
     border-radius: 6px;
     border: 1px solid var(--panel-border);
-    background: #0f1729;
+    background: var(--input-bg);
     color: var(--text-dim);
     cursor: pointer;
   }
@@ -202,14 +235,14 @@
     padding: 6px 14px;
     border-radius: 999px;
     border: 1px solid var(--panel-border);
-    background: rgba(15, 23, 42, 0.85);
+    background: var(--overlay-bg);
     color: var(--text-dim);
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.02em;
     white-space: nowrap;
     pointer-events: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 8px var(--overlay-shadow);
     backdrop-filter: blur(4px);
   }
   #vibe-badge .accent { color: var(--accent); }

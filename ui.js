@@ -91,6 +91,13 @@ if (typeof ResizeObserver !== 'undefined') {
   new ResizeObserver(syncViewToCanvas).observe(svg);
 }
 
+// Re-render on a live OS light/dark switch so the canvas grid (whose color is
+// read from the --grid CSS variable) tracks the theme without a reload. The
+// panel chrome updates on its own via the CSS variables.
+if (typeof matchMedia === 'function') {
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => render());
+}
+
 // Key for the persisted configuration.
 const STORAGE_KEY = 'ellipse-tool:state';
 
@@ -118,18 +125,24 @@ const arcGroup = el('g'); // solid arc overlay
 const handlesGroup = el('g'); // draggable points/handles
 svg.append(gridGroup, staticGroup, ellipseGroup, arcGroup, handlesGroup);
 
+/** Current value of a CSS custom property on :root (drives themed canvas colors). */
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 function drawGrid() {
   gridGroup.innerHTML = '';
+  const gridColor = cssVar('--grid') || '#1b2537';
   const step = niceStep(view.w);
   const x0 = Math.floor(view.x / step) * step;
   const x1 = view.x + view.w;
   const y0 = Math.floor(view.y / step) * step;
   const y1 = view.y + view.h;
   for (let x = x0; x <= x1; x += step) {
-    gridGroup.appendChild(el('line', { x1: x, y1: y0, x2: x, y2: y1, stroke: '#1b2537', 'stroke-width': 1 }));
+    gridGroup.appendChild(el('line', { x1: x, y1: y0, x2: x, y2: y1, stroke: gridColor, 'stroke-width': 1 }));
   }
   for (let y = y0; y <= y1; y += step) {
-    gridGroup.appendChild(el('line', { x1: x0, y1: y, x2: x1, y2: y, stroke: '#1b2537', 'stroke-width': 1 }));
+    gridGroup.appendChild(el('line', { x1: x0, y1: y, x2: x1, y2: y, stroke: gridColor, 'stroke-width': 1 }));
   }
 }
 
