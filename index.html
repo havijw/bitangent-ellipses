@@ -132,6 +132,13 @@
   p.hint { font-size: 12px; color: var(--text-dim); margin: 0 0 12px; line-height: 1.5; }
   .field { margin-bottom: 8px; }
   .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 3px; }
+  #param-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+  #param-head label { margin-bottom: 0; }
+  #param-value {
+    font-size: 12px;
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   .row { display: flex; gap: 8px; }
   .row > .field { flex: 1; }
   input[type="text"], input[type="number"], select {
@@ -299,7 +306,7 @@
       <button data-mode="through">Third point</button>
     </div>
     <div class="field" id="param-field" style="display:none">
-      <label id="param-label">Value</label>
+      <div id="param-head"><label id="param-label">Value</label><span id="param-value"></span></div>
       <input type="range" id="param-range" min="0.001" max="0.499" step="0.001" style="display:none" />
       <div id="range-ends" style="display:none"><span>0</span><span>0.5</span></div>
       <input type="text" id="param-text" style="display:none" />

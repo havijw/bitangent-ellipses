@@ -566,7 +566,11 @@ function syncControlsFromState() {
       const spans = document.querySelectorAll('#range-ends span');
       spans[0].textContent = meta.ends[0];
       spans[1].textContent = meta.ends[1];
+      // Live readout of the slider's current value next to the label.
+      document.getElementById('param-value').textContent =
+        typeof state.param === 'number' ? String(Number(state.param.toFixed(3)) + 0) : '';
     } else if (meta.kind === 'text') {
+      document.getElementById('param-value').textContent = '';
       if (document.activeElement !== textInput) textInput.value = state.param;
     } else {
       field.style.display = 'none';
