@@ -144,6 +144,14 @@
     font-size: 13px;
   }
   input[type="range"] { width: 100%; }
+  #range-ends {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   select { cursor: pointer; }
   .mode-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
   .mode-buttons button {
@@ -292,7 +300,8 @@
     </div>
     <div class="field" id="param-field" style="display:none">
       <label id="param-label">Value</label>
-      <input type="range" id="param-range" min="0.001" max="0.999" step="0.001" style="display:none" />
+      <input type="range" id="param-range" min="0.001" max="0.499" step="0.001" style="display:none" />
+      <div id="range-ends" style="display:none"><span>0</span><span>0.5</span></div>
       <input type="text" id="param-text" style="display:none" />
     </div>
 

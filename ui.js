@@ -493,7 +493,7 @@ function arcSummary(family, ellipse) {
 
 const MODE_META = {
   roundest: { label: null },
-  apex: { label: 'Apex position (0–1)', kind: 'range', min: 0.001, max: 0.999, step: 0.001 },
+  apex: { label: 'Apex position (parabola at 0.5)', kind: 'range', min: 0.001, max: 0.499, step: 0.001 },
   rotation: { label: 'Axis angle (deg)', kind: 'text' },
   ratio: { label: 'Major / minor ratio (≥ 1)', kind: 'text' },
   rx: { label: 'rx (semi-major)', kind: 'text' },
@@ -530,6 +530,7 @@ function syncControlsFromState() {
     field.style.display = 'block';
     label.textContent = meta.label;
     rangeInput.style.display = meta.kind === 'range' ? 'block' : 'none';
+    document.getElementById('range-ends').style.display = meta.kind === 'range' ? 'flex' : 'none';
     textInput.style.display = meta.kind === 'text' ? 'block' : 'none';
     if (meta.kind === 'range') {
       rangeInput.min = meta.min;
@@ -658,7 +659,7 @@ document.getElementById('mode-buttons').addEventListener('click', (e) => {
   if (!btn) return;
   state.mode = btn.dataset.mode;
   state.solutionIndex = 0;
-  if (state.mode === 'apex' && (typeof state.param !== 'number' || state.param <= 0 || state.param >= 1)) {
+  if (state.mode === 'apex' && (typeof state.param !== 'number' || state.param <= 0 || state.param >= 0.5)) {
     state.param = 0.3;
   }
   render();
