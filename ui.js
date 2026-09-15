@@ -168,8 +168,16 @@ function currentSolutions(family) {
       return [family.atApex(Number(state.param))];
     case 'rotation':
       return [family.withRotation(Number(state.param))];
-    case 'ratio':
-      return family.withAspectRatio(Number(state.param));
+    case 'ratio': {
+      // rx is fixed as the semi-major and ry as the semi-minor axis, so the
+      // major/minor ratio is always >= 1; reject sub-1 values rather than
+      // silently inverting the axes (which withAspectRatio would otherwise do).
+      const k = Number(state.param);
+      if (!(k >= 1)) {
+        throw new EllipseInputError('Aspect ratio (major / minor) must be at least 1.');
+      }
+      return family.withAspectRatio(k);
+    }
     case 'rx':
     case 'ry':
       return family.withRadius(state.mode, Number(state.param));
