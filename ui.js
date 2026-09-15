@@ -342,8 +342,8 @@ function drawHandles() {
 
   handlesGroup.appendChild(makeDraggable('p0', state.p0, 8, '#22c55e'));
   handlesGroup.appendChild(makeDraggable('p1', state.p1, 8, '#f87171'));
-  handlesGroup.appendChild(makeDraggable('h0', h0, 6, '#86efac'));
-  handlesGroup.appendChild(makeDraggable('h1', h1, 6, '#fca5a5'));
+  handlesGroup.appendChild(makeArrowHandle('h0', h0, state.t0Deg, 9, '#22c55e'));
+  handlesGroup.appendChild(makeArrowHandle('h1', h1, state.t1Deg, 9, '#f87171'));
   if (state.mode === 'through') {
     handlesGroup.appendChild(makeDraggable('through', state.paramPoint, 6, '#facc15'));
   }
@@ -353,6 +353,38 @@ function makeDraggable(id, pos, r, color) {
   const c = el('circle', { cx: pos.x, cy: pos.y, r: r * sizeScale, fill: color, stroke: '#0b1220', 'stroke-width': 2 });
   c.dataset.handle = id;
   return c;
+}
+
+/**
+ * A draggable arrowhead marker centered at `pos`, pointing along `deg` (the
+ * tangent direction). Behaves exactly like `makeDraggable` for hit-testing —
+ * it carries `data-handle` so the same pointer logic drives it — it just draws
+ * a triangle instead of a circle. `size` is the tip length in screen units.
+ */
+function makeArrowHandle(id, pos, deg, size, color) {
+  const s = size * sizeScale;
+  const rad = (deg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  // Triangle in local space pointing along +x, then rotated to `deg`.
+  const local = [
+    [s, 0],
+    [-s * 0.7, s * 0.85],
+    [-s * 0.7, -s * 0.85],
+  ];
+  const points = local
+    .map(([lx, ly]) => `${pos.x + lx * cos - ly * sin},${pos.y + lx * sin + ly * cos}`)
+    .join(' ');
+  const tri = el('polygon', {
+    points,
+    fill: color,
+    stroke: '#0b1220',
+    'stroke-width': 2,
+    'stroke-linejoin': 'round',
+    'vector-effect': 'non-scaling-stroke',
+  });
+  tri.dataset.handle = id;
+  return tri;
 }
 
 // ---------------------------------------------------------------------------
