@@ -531,6 +531,7 @@ function syncControlsFromState() {
   };
   setField('p0-xy', `${state.p0.x}, ${state.p0.y}`);
   setField('p1-xy', `${state.p1.x}, ${state.p1.y}`);
+  setField('through-xy', `${state.paramPoint.x}, ${state.paramPoint.y}`);
   setField('t0-deg', state.t0Deg);
   setField('t1-deg', state.t1Deg);
   document.getElementById('yup-toggle').checked = state.yUp;
@@ -540,6 +541,8 @@ function syncControlsFromState() {
   });
 
   const meta = MODE_META[state.mode];
+  document.getElementById('through-field').style.display =
+    state.mode === 'through' ? 'block' : 'none';
   const field = document.getElementById('param-field');
   const rangeInput = document.getElementById('param-range');
   const textInput = document.getElementById('param-text');
@@ -661,6 +664,12 @@ document.getElementById('p1-xy').addEventListener('change', (e) => {
   render();
   commitHistory();
 });
+document.getElementById('through-xy').addEventListener('change', (e) => {
+  const p = parsePoint(e.target.value);
+  if (p) state.paramPoint = p;
+  render();
+  commitHistory();
+});
 document.getElementById('t0-deg').addEventListener('change', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) state.t0Deg = v;
@@ -683,6 +692,9 @@ document.getElementById('mode-buttons').addEventListener('click', (e) => {
     state.param = 0.3;
   }
   render();
+  // Reveal the third point when entering "through" mode (render() first so the
+  // through-mode solution is in lastEllipse before we frame it).
+  if (state.mode === 'through' && ensureThroughPointVisible()) render();
   commitHistory();
 });
 
@@ -814,6 +826,32 @@ function fitToContent() {
   const focus = { bounds: controlPointsBounds(state), anchor: state.p0 };
   view = fitView(contentBounds(state, lastEllipse), aspect, focus);
   render();
+}
+
+/** Whether world point `pt` lies within the given viewBox `v`. */
+function pointInView(pt, v) {
+  return pt.x >= v.x && pt.x <= v.x + v.w && pt.y >= v.y && pt.y <= v.y + v.h;
+}
+
+/**
+ * When switching into "third point" mode, make sure the yellow third point is
+ * on screen: if it's already visible, leave the view alone; otherwise fit to
+ * the content (points + ellipse) so it comes into frame. Bails out without
+ * changing the view if even that fit can't show the point — e.g. the ellipse
+ * is so large the fit clamps and pushes the third point off screen. Returns
+ * true if the view was changed. Call after a render() so `lastEllipse` is the
+ * through-mode solution.
+ */
+function ensureThroughPointVisible() {
+  const pt = state.paramPoint;
+  if (pointInView(pt, view)) return false;
+  const rect = svg.getBoundingClientRect();
+  const aspect = rect.width && rect.height ? rect.width / rect.height : VIEW_W / VIEW_H;
+  const focus = { bounds: controlPointsBounds(state), anchor: state.p0 };
+  const candidate = fitView(contentBounds(state, lastEllipse), aspect, focus);
+  if (!pointInView(pt, candidate)) return false;
+  view = candidate;
+  return true;
 }
 
 // Button controls zoom about the canvas center.
