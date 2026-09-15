@@ -16,12 +16,12 @@
  * or a third point).
  */
 
-import { formatDisplay } from './format.js';
+import { formatDisplay } from "./format.js";
 
 export class EllipseInputError extends Error {
   constructor(message) {
     super(message);
-    this.name = 'EllipseInputError';
+    this.name = "EllipseInputError";
   }
 }
 
@@ -77,26 +77,31 @@ export function wrapHalfAngle(t) {
  * Returns `{ dir, signed }`.
  */
 export function tangentDirection(spec) {
-  if (typeof spec === 'number') {
-    if (Number.isNaN(spec)) throw new EllipseInputError('Tangent slope is NaN');
+  if (typeof spec === "number") {
+    if (Number.isNaN(spec)) throw new EllipseInputError("Tangent slope is NaN");
     if (!Number.isFinite(spec)) return { dir: { x: 0, y: 1 }, signed: false };
     return { dir: unit({ x: 1, y: spec }), signed: false };
   }
-  if (spec && typeof spec === 'object') {
-    if ('dir' in spec && 'signed' in spec) return spec;
-    if ('slope' in spec) return tangentDirection(spec.slope);
-    if ('deg' in spec) return tangentDirection({ rad: degToRad(spec.deg) });
-    if ('rad' in spec) {
-      return { dir: { x: Math.cos(spec.rad), y: Math.sin(spec.rad) }, signed: true };
+  if (spec && typeof spec === "object") {
+    if ("dir" in spec && "signed" in spec) return spec;
+    if ("slope" in spec) return tangentDirection(spec.slope);
+    if ("deg" in spec) return tangentDirection({ rad: degToRad(spec.deg) });
+    if ("rad" in spec) {
+      return {
+        dir: { x: Math.cos(spec.rad), y: Math.sin(spec.rad) },
+        signed: true,
+      };
     }
-    if ('dx' in spec && 'dy' in spec) {
+    if ("dx" in spec && "dy" in spec) {
       if (Math.hypot(spec.dx, spec.dy) === 0) {
-        throw new EllipseInputError('Tangent vector must be non-zero');
+        throw new EllipseInputError("Tangent vector must be non-zero");
       }
       return { dir: unit({ x: spec.dx, y: spec.dy }), signed: true };
     }
   }
-  throw new EllipseInputError('Tangent must be a slope number, {deg}, {rad}, or {dx, dy}');
+  throw new EllipseInputError(
+    "Tangent must be a slope number, {deg}, {rad}, or {dx, dy}",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +133,14 @@ export const conicDiscriminant = (c) => c.B * c.B - 4 * c.A * c.C;
 
 /** Evaluate A x^2 + B x y + C y^2 + D x + E y + F. */
 export function evalConic(c, p) {
-  return c.A * p.x * p.x + c.B * p.x * p.y + c.C * p.y * p.y + c.D * p.x + c.E * p.y + c.F;
+  return (
+    c.A * p.x * p.x +
+    c.B * p.x * p.y +
+    c.C * p.y * p.y +
+    c.D * p.x +
+    c.E * p.y +
+    c.F
+  );
 }
 
 function centerAndConstant(c) {
@@ -166,7 +178,9 @@ export function conicToEllipse(c) {
   // between "larger eigenvalue" and "smaller radius" flips. Rather than track
   // that sign case, just compare the two computed radii directly and swap so
   // `rx` is always the semi-major radius and `theta` always points along it.
-  let theta = isCircle ? 0 : wrapHalfAngle(0.5 * Math.atan2(c.B, c.A - c.C) + Math.PI / 2);
+  let theta = isCircle
+    ? 0
+    : wrapHalfAngle(0.5 * Math.atan2(c.B, c.A - c.C) + Math.PI / 2);
   if (rx2 < ry2) {
     [rx2, ry2] = [ry2, rx2];
     theta = wrapHalfAngle(theta + Math.PI / 2);
@@ -188,14 +202,14 @@ export function conicToEllipse(c) {
 /** Classify conic coefficients: ellipse | parabola | hyperbola | degenerate | imaginary. */
 export function classifyConic(c) {
   const q = Math.max(Math.abs(c.A), Math.abs(c.B), Math.abs(c.C));
-  if (q === 0) return 'degenerate';
+  if (q === 0) return "degenerate";
   const disc = conicDiscriminant(c);
-  if (Math.abs(disc) <= 1e-9 * q * q) return 'parabola';
-  if (disc > 0) return 'hyperbola';
-  if (conicToEllipse(c)) return 'ellipse';
+  if (Math.abs(disc) <= 1e-9 * q * q) return "parabola";
+  if (disc > 0) return "hyperbola";
+  if (conicToEllipse(c)) return "ellipse";
   const { cx, cy, Fp } = centerAndConstant(c);
   const ref = Math.abs(c.D * cx) + Math.abs(c.E * cy) + Math.abs(c.F);
-  return Math.abs(Fp) <= 1e-9 * (ref || 1) ? 'degenerate' : 'imaginary';
+  return Math.abs(Fp) <= 1e-9 * (ref || 1) ? "degenerate" : "imaginary";
 }
 
 // ---------------------------------------------------------------------------
@@ -231,15 +245,6 @@ export function ellipseParam(e, p) {
   return Math.atan2(v / e.ry, u / e.rx);
 }
 
-/** Axis-aligned bounding box of the ellipse. */
-export function ellipseBounds(e) {
-  const c = Math.cos(e.theta);
-  const s = Math.sin(e.theta);
-  const hw = Math.sqrt(e.rx * e.rx * c * c + e.ry * e.ry * s * s);
-  const hh = Math.sqrt(e.rx * e.rx * s * s + e.ry * e.ry * c * c);
-  return { minX: e.cx - hw, maxX: e.cx + hw, minY: e.cy - hh, maxY: e.cy + hh };
-}
-
 /** Sample `n + 1` points around the full ellipse. */
 export function ellipsePolyline(e, n = 180) {
   const pts = [];
@@ -272,17 +277,19 @@ export class EllipseFamily {
     const chordLength = norm(chord);
     const scaleRef = Math.max(chordLength, norm(p0), norm(p1), 1e-300);
     if (chordLength <= 1e-12 * scaleRef) {
-      throw new EllipseInputError('P0 and P1 coincide; two distinct points are required');
+      throw new EllipseInputError(
+        "P0 and P1 coincide; two distinct points are required",
+      );
     }
     const chordDir = unit(chord);
     if (Math.abs(cross(t0.dir, chordDir)) < PARALLEL_TOL) {
       throw new EllipseInputError(
-        'The tangent at P0 points along the chord P0P1; no ellipse can be tangent there and also pass through P1',
+        "The tangent at P0 points along the chord P0P1; no ellipse can be tangent there and also pass through P1",
       );
     }
     if (Math.abs(cross(t1.dir, chordDir)) < PARALLEL_TOL) {
       throw new EllipseInputError(
-        'The tangent at P1 points along the chord P0P1; no ellipse can be tangent there and also pass through P0',
+        "The tangent at P1 points along the chord P0P1; no ellipse can be tangent there and also pass through P0",
       );
     }
 
@@ -335,7 +342,9 @@ export class EllipseFamily {
   tThroughPoint(r) {
     const m = evalLine(this.M, r);
     if (Math.abs(m) <= 1e-12 * this.chordLength) {
-      throw new EllipseInputError('The third point lies on the line through P0 and P1');
+      throw new EllipseInputError(
+        "The third point lies on the line through P0 and P1",
+      );
     }
     return -(evalLine(this.L0, r) * evalLine(this.L1, r)) / (m * m);
   }
@@ -356,7 +365,8 @@ export class EllipseFamily {
   }
 
   tFromApex(a) {
-    if (!(a > 0 && a < 1)) throw new EllipseInputError('Apex parameter must be in (0, 1)');
+    if (!(a > 0 && a < 1))
+      throw new EllipseInputError("Apex parameter must be in (0, 1)");
     if (this.parallel) {
       const b = (this.halfChord * a) / (A_LIMIT - a);
       return -this._k0 / (b * b * this._md2);
@@ -382,7 +392,7 @@ export class EllipseFamily {
   solve(t) {
     const coeffs = this.coeffsAt(t);
     const ellipse = conicToEllipse(coeffs);
-    const kind = ellipse ? 'ellipse' : classifyConic(coeffs);
+    const kind = ellipse ? "ellipse" : classifyConic(coeffs);
     return { t, a: this.apexFromT(t), coeffs, kind, ellipse };
   }
 
@@ -452,10 +462,12 @@ export class EllipseFamily {
     if (Math.abs(g1) < 1e-12) {
       if (Math.abs(g0) < 1e-12) {
         throw new EllipseInputError(
-          'Every ellipse in this family already has its axes at that angle; pick a different constraint',
+          "Every ellipse in this family already has its axes at that angle; pick a different constraint",
         );
       }
-      throw new EllipseInputError('No conic in this family has its axes at that angle');
+      throw new EllipseInputError(
+        "No conic in this family has its axes at that angle",
+      );
     }
     return this.solve(-g0 / g1);
   }
@@ -465,7 +477,8 @@ export class EllipseFamily {
    * The condition is quadratic in `t`, so there are 0, 1, or 2 solutions.
    */
   withAspectRatio(k) {
-    if (!(k > 0) || !Number.isFinite(k)) throw new EllipseInputError('Aspect ratio must be a positive number');
+    if (!(k > 0) || !Number.isFinite(k))
+      throw new EllipseInputError("Aspect ratio must be a positive number");
     if (k < 1) k = 1 / k;
     const { P, S } = this;
     const k2 = k * k;
@@ -487,8 +500,10 @@ export class EllipseFamily {
    * Solved numerically over the apex parameter; returns 0, 1, or 2 solutions.
    */
   withRadius(which, value) {
-    if (which !== 'rx' && which !== 'ry') throw new EllipseInputError("Radius must be 'rx' or 'ry'");
-    if (!(value > 0) || !Number.isFinite(value)) throw new EllipseInputError('Radius must be a positive number');
+    if (which !== "rx" && which !== "ry")
+      throw new EllipseInputError("Radius must be 'rx' or 'ry'");
+    if (!(value > 0) || !Number.isFinite(value))
+      throw new EllipseInputError("Radius must be a positive number");
     const f = (u) => {
       const s = this.atApex(aFromU(u));
       return s.ellipse ? s.ellipse[which] - value : NaN;
@@ -509,7 +524,9 @@ export class EllipseFamily {
     // converge to that artifact and hand back an ellipse whose radius isn't the
     // requested value. Accept a candidate only if it actually hits the target.
     const accept = (s) =>
-      s.ellipse && Math.abs(s.ellipse[which] - value) <= 1e-6 * value ? out.push(s) : null;
+      s.ellipse && Math.abs(s.ellipse[which] - value) <= 1e-6 * value
+        ? out.push(s)
+        : null;
     const out = [];
     for (let i = 0; i < N; i++) {
       const f0 = fs[i];
@@ -583,14 +600,24 @@ function solveQuadratic(a, b, c) {
   const r1 = q / a;
   if (q === 0) return [r1];
   const r2 = c / q;
-  return Math.abs(r1 - r2) < 1e-15 * Math.max(1, Math.abs(r1)) ? [r1] : [r1, r2];
+  return Math.abs(r1 - r2) < 1e-15 * Math.max(1, Math.abs(r1))
+    ? [r1]
+    : [r1, r2];
 }
 
 // ---------------------------------------------------------------------------
-// Convenience entry point shared by the CLI and the UI
+// Convenience entry point for headless solving (used by the tests)
 // ---------------------------------------------------------------------------
 
-export const MODES = ['roundest', 'apex', 'rotation', 'ratio', 'rx', 'ry', 'through'];
+export const MODES = [
+  "roundest",
+  "apex",
+  "rotation",
+  "ratio",
+  "rx",
+  "ry",
+  "through",
+];
 
 /**
  * Build the family and apply one fifth-constraint mode.
@@ -606,7 +633,7 @@ export const MODES = ['roundest', 'apex', 'rotation', 'ratio', 'rx', 'ry', 'thro
  *   `solutions` holds only real ellipses; `rejected` (if present) holds the
  *   non-ellipse candidate so callers can explain why nothing came back.
  */
-export function solveEllipse({ p0, p1, t0, t1, mode = 'roundest', param }) {
+export function solveEllipse({ p0, p1, t0, t1, mode = "roundest", param }) {
   const family = new EllipseFamily(p0, t0, p1, t1);
   return { family, ...familySolutions(family, mode, param) };
 }
@@ -628,27 +655,29 @@ export function solveEllipse({ p0, p1, t0, t1, mode = 'roundest', param }) {
 export function familySolutions(family, mode, param) {
   let candidates;
   switch (mode) {
-    case 'roundest':
+    case "roundest":
       candidates = [family.roundest()];
       break;
-    case 'apex':
+    case "apex":
       candidates = [family.atApex(Number(param))];
       break;
-    case 'rotation':
+    case "rotation":
       candidates = [family.withRotation(Number(param))];
       break;
-    case 'ratio': {
+    case "ratio": {
       const k = Number(param);
       if (!(k >= 1)) {
-        throw new EllipseInputError('Aspect ratio (major / minor) must be at least 1.');
+        throw new EllipseInputError(
+          "Aspect ratio (major / minor) must be at least 1.",
+        );
       }
       candidates = family.withAspectRatio(k);
       break;
     }
-    case 'rx':
-    case 'ry': {
+    case "rx":
+    case "ry": {
       const value = Number(param);
-      if (mode === 'rx' && value < family.halfChord) {
+      if (mode === "rx" && value < family.halfChord) {
         const min = formatDisplay(family.halfChord);
         throw new EllipseInputError(
           `rx must be at least ${min} (half the distance between P0 and P1) \u2014 no ellipse through both points can have a shorter semi-major axis.`,
@@ -657,11 +686,13 @@ export function familySolutions(family, mode, param) {
       candidates = family.withRadius(mode, value);
       break;
     }
-    case 'through':
+    case "through":
       candidates = [family.throughPoint(param)];
       break;
     default:
-      throw new EllipseInputError(`Unknown mode '${mode}'; expected one of ${MODES.join(', ')}`);
+      throw new EllipseInputError(
+        `Unknown mode '${mode}'; expected one of ${MODES.join(", ")}`,
+      );
   }
   return {
     solutions: candidates.filter((s) => s.ellipse),
@@ -687,19 +718,19 @@ export function smallArcMidpoint(e, p0, p1) {
 export function continuityParam(mode, prev, p0, p1) {
   const e = prev.ellipse;
   switch (mode) {
-    case 'apex':
-      return typeof prev.a === 'number' ? { param: prev.a } : {};
-    case 'rotation':
+    case "apex":
+      return typeof prev.a === "number" ? { param: prev.a } : {};
+    case "rotation":
       // The rotation solve is 90-degree periodic, so fold the ellipse's axis
       // angle into the slider's [0, 90) window; it reproduces the same member.
       return { param: ((e.thetaDeg % 90) + 90) % 90 };
-    case 'ratio':
+    case "ratio":
       return { param: e.rx / e.ry };
-    case 'rx':
+    case "rx":
       return { param: e.rx };
-    case 'ry':
+    case "ry":
       return { param: e.ry };
-    case 'through':
+    case "through":
       return { paramPoint: smallArcMidpoint(e, p0, p1) };
     default:
       return {};

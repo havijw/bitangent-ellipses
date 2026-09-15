@@ -85,8 +85,3 @@ auto-executes everything in a `test/` directory.
    `CHROMIUM_PATH` to point at one.
 3. `node serve.js` then open the URL and confirm the solid arc sits exactly on
    the dashed ellipse in every mode — the built-in visual self-check.
-
-## Git / workflow
-
-Branch names are prefixed `jackhaviland-`. The human handles all pushing — do
-not take remote write actions; just say when something is ready to push.

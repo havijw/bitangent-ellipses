@@ -86,8 +86,7 @@ export function chooseArc(ellipse, p0, p1, opts = {}) {
  * first position would be treated as absolute anyway.
  *
  * When `yUp` is set, the emitted coordinates are y-flipped so the path
- * renders correctly on a normal (y-down) SVG canvas with no extra transform,
- * matching the convention `ellipseMarkup`/`standaloneSvg` use for the center.
+ * renders correctly on a normal (y-down) SVG canvas with no extra transform.
  */
 export function arcPath(ellipse, p0, p1, arc, { yUp = false } = {}) {
   const rot = normalizeTheta(ellipse.thetaDeg, yUp);
@@ -130,31 +129,4 @@ export function arcPathParameter(ellipse, p0, p1, arc, { yUp = false } = {}) {
     direction: arc.sweep === 1 ? 'CLOCKWISE' : 'COUNTER_CLOCKWISE',
     arc_size: arc.largeArc === 1 ? 'LARGE' : 'SMALL',
   };
-}
-
-/** `<ellipse>` markup for the full ellipse, for overlay / verification. */
-export function ellipseMarkup(ellipse, { yUp = false, attrs = '' } = {}) {
-  const rot = normalizeTheta(ellipse.thetaDeg, yUp);
-  const cy = yUp ? -ellipse.cy : ellipse.cy;
-  return `<ellipse cx="${ellipse.cx}" cy="${cy}" rx="${ellipse.rx}" ry="${
-    ellipse.ry
-  }" transform="rotate(${rot} ${ellipse.cx} ${cy})"${attrs ? ` ${attrs}` : ''} />`;
-}
-
-/** Convenience: full standalone SVG document for eyeballing a solution. */
-export function standaloneSvg({ ellipse, p0, p1, arc, yUp = false, width = 480, height = 360, pad = 40 }) {
-  const d = arcPath(ellipse, p0, p1, arc, { yUp });
-  const markup = ellipseMarkup(ellipse, { yUp, attrs: 'fill="none" stroke="#94a3b8" stroke-dasharray="4 3"' });
-  const cy0 = yUp ? -p0.y : p0.y;
-  const cy1 = yUp ? -p1.y : p1.y;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${
-    ellipse.cx - ellipse.rx - pad
-  } ${(yUp ? -ellipse.cy : ellipse.cy) - Math.max(ellipse.rx, ellipse.ry) - pad} ${
-    2 * Math.max(ellipse.rx, ellipse.ry) + 2 * pad
-  } ${2 * Math.max(ellipse.rx, ellipse.ry) + 2 * pad}">
-  ${markup}
-  <path d="${d}" fill="none" stroke="#0ea5e9" stroke-width="2" />
-  <circle cx="${p0.x}" cy="${cy0}" r="3" fill="#16a34a" />
-  <circle cx="${p1.x}" cy="${cy1}" r="3" fill="#dc2626" />
-</svg>`;
 }
