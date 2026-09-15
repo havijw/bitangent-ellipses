@@ -179,8 +179,20 @@ function currentSolutions(family) {
       return family.withAspectRatio(k);
     }
     case 'rx':
-    case 'ry':
-      return family.withRadius(state.mode, Number(state.param));
+    case 'ry': {
+      const value = Number(state.param);
+      // Both points are chords of the ellipse, and a chord can never exceed the
+      // major axis (2*rx), so any ellipse through P0 and P1 has rx >= half the
+      // distance between them. Reject a smaller rx outright with that bound
+      // rather than falling through to the generic "no ellipse" message.
+      if (state.mode === 'rx' && value < family.halfChord) {
+        const min = String(Number(family.halfChord.toFixed(3)) + 0);
+        throw new EllipseInputError(
+          `rx must be at least ${min} (half the distance between P0 and P1) — no ellipse through both points can have a shorter semi-major axis.`,
+        );
+      }
+      return family.withRadius(state.mode, value);
+    }
     case 'through':
       return [family.throughPoint(state.paramPoint)];
     default:
