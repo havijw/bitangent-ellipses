@@ -516,8 +516,8 @@ function arcSummary(family, ellipse) {
 
 const MODE_META = {
   roundest: { label: null },
-  apex: { label: 'Apex position (parabola at 0.5)', kind: 'range', min: 0.001, max: 0.499, step: 0.001 },
-  rotation: { label: 'Axis angle (deg)', kind: 'text' },
+  apex: { label: 'Apex position (parabola at 0.5)', kind: 'range', min: 0.001, max: 0.499, step: 0.001, ends: ['0', '0.5'] },
+  rotation: { label: 'Axis angle (deg)', kind: 'range', min: 0, max: 90, step: 1, ends: ['0', '90'] },
   ratio: { label: 'Major / minor ratio (≥ 1)', kind: 'text' },
   rx: { label: 'rx (semi-major)', kind: 'text' },
   ry: { label: 'ry (semi-minor)', kind: 'text' },
@@ -563,6 +563,9 @@ function syncControlsFromState() {
       rangeInput.max = meta.max;
       rangeInput.step = meta.step;
       rangeInput.value = state.param;
+      const spans = document.querySelectorAll('#range-ends span');
+      spans[0].textContent = meta.ends[0];
+      spans[1].textContent = meta.ends[1];
     } else if (meta.kind === 'text') {
       if (document.activeElement !== textInput) textInput.value = state.param;
     } else {
@@ -715,7 +718,9 @@ function applyModeContinuity(mode, prev) {
       if (typeof prev.a === 'number') state.param = prev.a;
       break;
     case 'rotation':
-      state.param = e.thetaDeg;
+      // The rotation solve is 90-degree periodic, so fold the ellipse's axis
+      // angle into the slider's [0, 90) window; it reproduces the same member.
+      state.param = ((e.thetaDeg % 90) + 90) % 90;
       break;
     case 'ratio':
       state.param = e.rx / e.ry;
