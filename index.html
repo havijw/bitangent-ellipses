@@ -179,10 +179,31 @@
     cursor: pointer;
   }
   #reset-btn:hover { color: var(--text); }
+  #vibe-badge {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: rgba(15, 23, 42, 0.85);
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(4px);
+  }
+  #vibe-badge .accent { color: var(--accent); }
 </style>
 </head>
 <body>
   <div id="canvas-wrap">
+    <div id="vibe-badge">This app was vibe-coded with <span class="accent">Opus</span></div>
     <svg id="canvas" viewBox="0 0 800 600"></svg>
     <div id="zoom-controls">
       <button id="zoom-in" title="Zoom in">+</button>
