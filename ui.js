@@ -1,18 +1,25 @@
 /**
- * Browser UI for the two-tangent ellipse tool.
+ * Browser UI for the two-tangent ellipse tool — the orchestrator.
+ *
+ * This file owns the mutable app state, the view (pan/zoom), the single
+ * render/solve cycle, event wiring, and persistence. The pieces it drives are
+ * modular: pure logic lives in `src/*.js` (math, state, formatting) and the
+ * view layer lives in `src/ui/*.js` (generic DOM builders, canvas drawing,
+ * sidebar panels). Everything here reads as "gather the current state, solve,
+ * and hand the result to the drawing/panel functions".
  *
  * The canvas is a plain SVG element using the browser's native (y-down)
  * coordinate convention, and all solving happens directly in those same
  * coordinates — so the dashed "full ellipse" polyline and the solid arc path
- * drawn on top of it are produced by the exact same math the CLI and SVG
- * export use, with `yUp: false`. That overlay coinciding pixel-for-pixel is
- * the tool's own correctness check. The "Y-axis points up" toggle only
- * affects the text in the export boxes, for pasting into a renderer that
- * uses the opposite convention; it does not change what's drawn here.
+ * drawn on top of it are produced by the exact same math the SVG export uses,
+ * with `yUp: false`. That overlay coinciding pixel-for-pixel is the tool's own
+ * correctness check. The "Y-axis points up" toggle only affects the text in
+ * the export boxes, for pasting into a renderer that uses the opposite
+ * convention; it does not change what's drawn here.
  */
 
-import { EllipseFamily, EllipseInputError, ellipsePolyline, ellipseParam, ellipsePoint, wrapAngle } from './src/ellipse.js';
-import { chooseArc, arcPath, arcPathParameter } from './src/svg.js';
+import { EllipseFamily, EllipseInputError, familySolutions, continuityParam, matchSolutionIndex } from './src/ellipse.js';
+import { chooseArc } from './src/svg.js';
 import {
   VIEW_W,
   VIEW_H,
@@ -28,8 +35,12 @@ import {
   controlPointsBounds,
   fitView,
   zoomView,
-  niceStep,
+  pointInView,
+  History,
 } from './src/state.js';
+import { el } from './src/ui/dom.js';
+import { drawGrid, drawStaticGeometry, drawEllipseOverlay, drawArcOverlay, drawHandles } from './src/ui/scene.js';
+import { renderResults, renderExports, syncControlsFromState } from './src/ui/panels.js';
 
 const svg = document.getElementById('canvas');
 const HANDLE_LEN = 70;
@@ -112,13 +123,6 @@ let state = withDefaults(loadStateFromHash() ?? loadStateFromStorage());
 // ---------------------------------------------------------------------------
 
 applyView();
-const NS = 'http://www.w3.org/2000/svg';
-function el(tag, attrs = {}) {
-  const node = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-  return node;
-}
-
 const gridGroup = el('g');
 const staticGroup = el('g'); // tangent lines, chord
 const ellipseGroup = el('g'); // dashed full ellipse
@@ -126,90 +130,59 @@ const arcGroup = el('g'); // solid arc overlay
 const handlesGroup = el('g'); // draggable points/handles
 svg.append(gridGroup, staticGroup, ellipseGroup, arcGroup, handlesGroup);
 
-/** Current value of a CSS custom property on :root (drives themed canvas colors). */
-function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-function drawGrid() {
-  gridGroup.innerHTML = '';
-  const gridColor = cssVar('--grid') || '#1b2537';
-  const step = niceStep(view.w);
-  const x0 = Math.floor(view.x / step) * step;
-  const x1 = view.x + view.w;
-  const y0 = Math.floor(view.y / step) * step;
-  const y1 = view.y + view.h;
-  for (let x = x0; x <= x1; x += step) {
-    gridGroup.appendChild(el('line', { x1: x, y1: y0, x2: x, y2: y1, stroke: gridColor, 'stroke-width': 1 }));
-  }
-  for (let y = y0; y <= y1; y += step) {
-    gridGroup.appendChild(el('line', { x1: x0, y1: y, x2: x1, y2: y, stroke: gridColor, 'stroke-width': 1 }));
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Geometry helpers tying UI state to the math module
+// Solving: build the family and pick the member for the current mode
 // ---------------------------------------------------------------------------
-
-function handlePos(p, deg) {
-  const rad = (deg * Math.PI) / 180;
-  const len = HANDLE_LEN * sizeScale;
-  return { x: p.x + len * Math.cos(rad), y: p.y + len * Math.sin(rad) };
-}
 
 function buildFamily() {
   return new EllipseFamily(state.p0, { deg: state.t0Deg }, state.p1, { deg: state.t1Deg });
 }
 
 function currentSolutions(family) {
-  switch (state.mode) {
-    case 'roundest':
-      return [family.roundest()];
-    case 'apex':
-      return [family.atApex(Number(state.param))];
-    case 'rotation':
-      return [family.withRotation(Number(state.param))];
-    case 'ratio': {
-      // rx is fixed as the semi-major and ry as the semi-minor axis, so the
-      // major/minor ratio is always >= 1; reject sub-1 values rather than
-      // silently inverting the axes (which withAspectRatio would otherwise do).
-      const k = Number(state.param);
-      if (!(k >= 1)) {
-        throw new EllipseInputError('Aspect ratio (major / minor) must be at least 1.');
-      }
-      return family.withAspectRatio(k);
-    }
-    case 'rx':
-    case 'ry': {
-      const value = Number(state.param);
-      // Both points are chords of the ellipse, and a chord can never exceed the
-      // major axis (2*rx), so any ellipse through P0 and P1 has rx >= half the
-      // distance between them. Reject a smaller rx outright with that bound
-      // rather than falling through to the generic "no ellipse" message.
-      if (state.mode === 'rx' && value < family.halfChord) {
-        const min = String(Number(family.halfChord.toFixed(3)) + 0);
-        throw new EllipseInputError(
-          `rx must be at least ${min} (half the distance between P0 and P1) — no ellipse through both points can have a shorter semi-major axis.`,
-        );
-      }
-      return family.withRadius(state.mode, value);
-    }
-    case 'through':
-      return [family.throughPoint(state.paramPoint)];
-    default:
-      throw new EllipseInputError(`Unknown mode '${state.mode}'`);
+  // The mode dispatch and its guards live in ellipse.js so this and the
+  // headless solveEllipse entry point can never diverge. 'through' takes the
+  // third point; every other mode takes the numeric slider/field value.
+  const param = state.mode === 'through' ? state.paramPoint : state.param;
+  return familySolutions(family, state.mode, param).solutions;
+}
+
+/**
+ * The arc to draw/export for `ellipse`: honor an explicit small/large choice
+ * if the user made one, otherwise follow the signed tangent leaving P0. `yUp`
+ * flips the sweep for the export convention; the canvas always passes false.
+ */
+function pickArc(family, ellipse, yUp = false) {
+  if (state.arcChoice === 'small' || state.arcChoice === 'large') {
+    return chooseArc(ellipse, family.p0, family.p1, { yUp, preferLargeArc: state.arcChoice === 'large' });
   }
+  return chooseArc(ellipse, family.p0, family.p1, {
+    yUp,
+    tangentAtP0: { dir: family.d0, signed: true },
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Main render/solve cycle
 // ---------------------------------------------------------------------------
 
+function showError(err) {
+  const box = document.getElementById('error-box');
+  box.textContent = err instanceof EllipseInputError || err.message ? err.message : String(err);
+  box.style.display = 'block';
+}
+
+// Re-solve when the user cycles to another solution of a multi-valued mode.
+function onCycleSolution(nextIndex) {
+  state.solutionIndex = nextIndex;
+  render();
+  commitHistory();
+}
+
 function render() {
   saveState();
-  syncControlsFromState();
+  syncControlsFromState(state);
   applyView();
-  drawGrid();
+  drawGrid(gridGroup, view);
 
   // Reset each cycle; set again below only when an ellipse is actually solved.
   lastEllipse = null;
@@ -221,16 +194,16 @@ function render() {
     family = buildFamily();
   } catch (err) {
     showError(err);
-    drawStaticGeometry(null);
+    drawStaticGeometry(staticGroup, state, null, view, sizeScale);
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
-    renderResults([]);
-    renderExports(null, null);
-    drawHandles();
+    renderResults(state, [], 0, onCycleSolution);
+    renderExports(state, null, null);
+    drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
     return;
   }
 
-  drawStaticGeometry(family);
+  drawStaticGeometry(staticGroup, state, family, view, sizeScale);
 
   let solutions;
   let rejected;
@@ -242,9 +215,9 @@ function render() {
     showError(err);
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
-    renderResults([]);
-    renderExports(family, null);
-    drawHandles();
+    renderResults(state, [], 0, onCycleSolution);
+    renderExports(state, family, null);
+    drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
     return;
   }
 
@@ -257,9 +230,9 @@ function render() {
     showError({ message: note });
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
-    renderResults([]);
-    renderExports(family, null);
-    drawHandles();
+    renderResults(state, [], 0, onCycleSolution);
+    renderExports(state, family, null);
+    drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
     return;
   }
 
@@ -268,314 +241,15 @@ function render() {
   lastEllipse = solution.ellipse;
   lastSolution = solution;
 
-  drawEllipseOverlay(solution.ellipse);
-  drawArc(family, solution.ellipse);
-  renderResults(solutions, index);
-  renderExports(family, solution.ellipse);
-  drawHandles();
-}
-
-function showError(err) {
-  const box = document.getElementById('error-box');
-  box.textContent = err instanceof EllipseInputError || err.message ? err.message : String(err);
-  box.style.display = 'block';
-}
-
-/**
- * Clip the infinite line through `p` with unit direction `dir` to the current
- * view rectangle (Liang–Barsky). Returns the two edge intersection points, or
- * null if the line misses the view entirely. Handles axis-aligned (vertical or
- * horizontal) directions.
- */
-function clipLineToView(p, dir) {
-  const xmin = view.x;
-  const xmax = view.x + view.w;
-  const ymin = view.y;
-  const ymax = view.y + view.h;
-  const ps = [-dir.x, dir.x, -dir.y, dir.y];
-  const qs = [p.x - xmin, xmax - p.x, p.y - ymin, ymax - p.y];
-  let tmin = -Infinity;
-  let tmax = Infinity;
-  for (let i = 0; i < 4; i++) {
-    if (ps[i] === 0) {
-      if (qs[i] < 0) return null; // parallel to this edge and outside it
-    } else {
-      const t = qs[i] / ps[i];
-      if (ps[i] < 0) tmin = Math.max(tmin, t);
-      else tmax = Math.min(tmax, t);
-    }
-  }
-  if (tmin > tmax) return null;
-  return [
-    { x: p.x + dir.x * tmin, y: p.y + dir.y * tmin },
-    { x: p.x + dir.x * tmax, y: p.y + dir.y * tmax },
-  ];
-}
-
-function drawStaticGeometry(family) {
-  staticGroup.innerHTML = '';
-  if (!family) return;
-  const line = (a, b, color, dash) =>
-    el('line', {
-      x1: a.x,
-      y1: a.y,
-      x2: b.x,
-      y2: b.y,
-      stroke: color,
-      'stroke-width': 1.5,
-      'stroke-dasharray': dash,
-    });
-  staticGroup.appendChild(line(state.p0, state.p1, '#475569', '3 3'));
-  // Draw each tangent as the segment where its infinite line crosses the
-  // current view, so it always spans the whole canvas at any zoom or pan
-  // rather than being a fixed (and eventually too-short) length.
-  const t0 = clipLineToView(state.p0, family.d0);
-  if (t0) staticGroup.appendChild(line(t0[0], t0[1], '#22c55e', '2 4'));
-  const t1 = clipLineToView(state.p1, family.d1);
-  if (t1) staticGroup.appendChild(line(t1[0], t1[1], '#f87171', '2 4'));
-  if (state.mode === 'through') {
-    staticGroup.appendChild(el('circle', { cx: state.paramPoint.x, cy: state.paramPoint.y, r: 5 * sizeScale, fill: '#facc15' }));
-  }
-}
-
-function drawEllipseOverlay(ellipse) {
-  ellipseGroup.innerHTML = '';
-  const pts = ellipsePolyline(ellipse, 180);
-  const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(3)} ${p.y.toFixed(3)}`).join(' ') + ' Z';
-  ellipseGroup.appendChild(el('path', { d, fill: 'none', stroke: '#64748b', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }));
-  ellipseGroup.appendChild(el('circle', { cx: ellipse.cx, cy: ellipse.cy, r: 2.5 * sizeScale, fill: '#64748b' }));
-}
-
-function pickArc(family, ellipse, yUp = false) {
-  if (state.arcChoice === 'small' || state.arcChoice === 'large') {
-    return chooseArc(ellipse, family.p0, family.p1, { yUp, preferLargeArc: state.arcChoice === 'large' });
-  }
-  return chooseArc(ellipse, family.p0, family.p1, {
-    yUp,
-    tangentAtP0: { dir: family.d0, signed: true },
-  });
-}
-
-function drawArc(family, ellipse) {
-  arcGroup.innerHTML = '';
-  // The canvas is always y-down, so draw with yUp = false regardless of the
-  // export convention chosen for the copy boxes.
-  const arc = pickArc(family, ellipse, false);
-  const d = arcPath(ellipse, family.p0, family.p1, arc, { yUp: false });
-  arcGroup.appendChild(el('path', { d, fill: 'none', stroke: '#0ea5e9', 'stroke-width': 3, 'stroke-linecap': 'round' }));
-  return arc;
-}
-
-function drawHandles() {
-  handlesGroup.innerHTML = '';
-  const h0 = handlePos(state.p0, state.t0Deg);
-  const h1 = handlePos(state.p1, state.t1Deg);
-
-  const stalk = (p, h, color) =>
-    el('line', { x1: p.x, y1: p.y, x2: h.x, y2: h.y, stroke: color, 'stroke-width': 1.5, opacity: 0.6 });
-  handlesGroup.appendChild(stalk(state.p0, h0, '#22c55e'));
-  handlesGroup.appendChild(stalk(state.p1, h1, '#f87171'));
-
-  handlesGroup.appendChild(makeDraggable('p0', state.p0, 8, '#22c55e'));
-  handlesGroup.appendChild(makeDraggable('p1', state.p1, 8, '#f87171'));
-  handlesGroup.appendChild(makeArrowHandle('h0', h0, state.t0Deg, 9, '#22c55e'));
-  handlesGroup.appendChild(makeArrowHandle('h1', h1, state.t1Deg, 9, '#f87171'));
-  if (state.mode === 'through') {
-    handlesGroup.appendChild(makeDraggable('through', state.paramPoint, 6, '#facc15'));
-  }
-}
-
-function makeDraggable(id, pos, r, color) {
-  const c = el('circle', { cx: pos.x, cy: pos.y, r: r * sizeScale, fill: color, stroke: '#0b1220', 'stroke-width': 2 });
-  c.dataset.handle = id;
-  return c;
-}
-
-/**
- * A draggable arrowhead marker centered at `pos`, pointing along `deg` (the
- * tangent direction). Behaves exactly like `makeDraggable` for hit-testing —
- * it carries `data-handle` so the same pointer logic drives it — it just draws
- * a triangle instead of a circle. `size` is the tip length in screen units.
- */
-function makeArrowHandle(id, pos, deg, size, color) {
-  const s = size * sizeScale;
-  const rad = (deg * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  // Triangle in local space pointing along +x, then rotated to `deg`.
-  const local = [
-    [s, 0],
-    [-s * 0.7, s * 0.85],
-    [-s * 0.7, -s * 0.85],
-  ];
-  const points = local
-    .map(([lx, ly]) => `${pos.x + lx * cos - ly * sin},${pos.y + lx * sin + ly * cos}`)
-    .join(' ');
-  const tri = el('polygon', {
-    points,
-    fill: color,
-    stroke: '#0b1220',
-    'stroke-width': 2,
-    'stroke-linejoin': 'round',
-    'vector-effect': 'non-scaling-stroke',
-  });
-  tri.dataset.handle = id;
-  return tri;
-}
-
-// ---------------------------------------------------------------------------
-// Results / export panels
-// ---------------------------------------------------------------------------
-
-function renderResults(solutions, index = 0) {
-  const box = document.getElementById('results');
-  if (solutions.length === 0) {
-    box.innerHTML = '<div class="result-row"><span class="label">No solution</span></div>';
-    return;
-  }
-  const e = solutions[index].ellipse;
-  // Match the export boxes' convention: when the user says their y-axis
-  // points up, both the rotation sign and the center's y-coordinate flip
-  // together (same origin, mirrored y), not just the rotation alone.
-  const rot = state.yUp ? -e.thetaDeg : e.thetaDeg;
-  const cy = state.yUp ? -e.cy : e.cy;
-  // Display values are rounded to at most 3 decimals to keep the result pane
-  // readable; trailing zeros are dropped (1.5, not 1.500). This is display-only
-  // — the URL hash, inputs, and export boxes stay lossless.
-  const show = (n) => String(Number(n.toFixed(3)) + 0);
-  const rows = [
-    ['rx (semi-major)', show(e.rx)],
-    ['ry (semi-minor)', show(e.ry)],
-    ['rotation (deg)', show(rot)],
-    ['center', `${show(e.cx)}, ${show(cy)}`],
-    ['eccentricity', show(e.eccentricity)],
-  ];
-  box.innerHTML = rows
-    .map(
-      ([label, value], i) =>
-        `<div class="result-row${i < 2 ? ' big' : ''}"><span class="label">${label}</span><span class="value">${value}</span></div>`,
-    )
-    .join('');
-  if (solutions.length > 1) {
-    box.innerHTML += `<div class="result-row"><span class="label">Solution ${index + 1} of ${solutions.length}</span><button class="copy-btn" id="cycle-solution">Next</button></div>`;
-    document.getElementById('cycle-solution').addEventListener('click', () => {
-      state.solutionIndex = (index + 1) % solutions.length;
-      render();
-      commitHistory();
-    });
-  }
-}
-
-/**
- * Grow a readonly export textarea to fit its content so nothing is clipped
- * behind an inner scrollbar. Resetting to 'auto' first lets it shrink back
- * when the content gets shorter; the +2 covers the 1px top/bottom border
- * under box-sizing: border-box. The CSS min-height keeps an empty box sane.
- */
-function autoSizeTextarea(el) {
-  el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight + 2}px`;
-}
-
-function renderExports(family, ellipse) {
-  const pathBox = document.getElementById('export-path');
-  const arcParamBox = document.getElementById('export-arc-param');
-  if (!family || !ellipse) {
-    pathBox.value = '';
-    arcParamBox.value = '';
-    autoSizeTextarea(pathBox);
-    autoSizeTextarea(arcParamBox);
-    return;
-  }
-  // Recompute the arc in the export's coordinate convention: the sweep flag
-  // (and thus ARC `direction`) flips between y-down and y-up, so exports must
-  // not reuse the y-down arc drawn on the canvas.
-  const exportArc = pickArc(family, ellipse, state.yUp);
-  pathBox.value = arcPath(ellipse, family.p0, family.p1, exportArc, { yUp: state.yUp });
-  arcParamBox.value = JSON.stringify(
-    arcPathParameter(ellipse, family.p0, family.p1, exportArc, { yUp: state.yUp }),
-    null,
-    2,
-  );
-  autoSizeTextarea(pathBox);
-  autoSizeTextarea(arcParamBox);
-  const { small } = arcSummary(family, ellipse);
-  document.querySelectorAll('#arc-toggle button').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.arc === small);
-  });
-}
-
-function arcSummary(family, ellipse) {
-  const arc = pickArc(family, ellipse);
-  return { small: arc.largeArc ? 'large' : 'small' };
-}
-
-// ---------------------------------------------------------------------------
-// Controls: text inputs, mode buttons, arc toggle, y-up toggle
-// ---------------------------------------------------------------------------
-
-const MODE_META = {
-  roundest: { label: null },
-  apex: { label: 'Apex position (parabola at 0.5)', kind: 'range', min: 0.001, max: 0.499, step: 0.001, ends: ['0', '0.5'] },
-  rotation: { label: 'Axis angle (deg)', kind: 'range', min: 0, max: 90, step: 1, ends: ['0', '90'] },
-  ratio: { label: 'Major / minor ratio (≥ 1)', kind: 'text' },
-  rx: { label: 'rx (semi-major)', kind: 'text' },
-  ry: { label: 'ry (semi-minor)', kind: 'text' },
-  through: { label: 'Drag the yellow point on the canvas', kind: 'none' },
-};
-
-function syncControlsFromState() {
-  // Write the full-precision value, but never clobber a field mid-edit, so a
-  // typed value with many decimals survives intact instead of being repainted
-  // to a rounded form the next time we render.
-  const setField = (id, value) => {
-    const field = document.getElementById(id);
-    if (document.activeElement !== field) field.value = value;
-  };
-  setField('p0-xy', `${state.p0.x}, ${state.p0.y}`);
-  setField('p1-xy', `${state.p1.x}, ${state.p1.y}`);
-  setField('through-xy', `${state.paramPoint.x}, ${state.paramPoint.y}`);
-  setField('t0-deg', state.t0Deg);
-  setField('t1-deg', state.t1Deg);
-  document.getElementById('yup-toggle').checked = state.yUp;
-
-  document.querySelectorAll('#mode-buttons button').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.mode === state.mode);
-  });
-
-  const meta = MODE_META[state.mode];
-  document.getElementById('through-field').style.display =
-    state.mode === 'through' ? 'block' : 'none';
-  const field = document.getElementById('param-field');
-  const rangeInput = document.getElementById('param-range');
-  const textInput = document.getElementById('param-text');
-  const label = document.getElementById('param-label');
-  if (!meta.label) {
-    field.style.display = 'none';
-  } else {
-    field.style.display = 'block';
-    label.textContent = meta.label;
-    rangeInput.style.display = meta.kind === 'range' ? 'block' : 'none';
-    document.getElementById('range-ends').style.display = meta.kind === 'range' ? 'flex' : 'none';
-    textInput.style.display = meta.kind === 'text' ? 'block' : 'none';
-    if (meta.kind === 'range') {
-      rangeInput.min = meta.min;
-      rangeInput.max = meta.max;
-      rangeInput.step = meta.step;
-      rangeInput.value = state.param;
-      const spans = document.querySelectorAll('#range-ends span');
-      spans[0].textContent = meta.ends[0];
-      spans[1].textContent = meta.ends[1];
-      // Live readout of the slider's current value next to the label.
-      document.getElementById('param-value').textContent =
-        typeof state.param === 'number' ? String(Number(state.param.toFixed(3)) + 0) : '';
-    } else if (meta.kind === 'text') {
-      document.getElementById('param-value').textContent = '';
-      if (document.activeElement !== textInput) textInput.value = state.param;
-    } else {
-      field.style.display = 'none';
-    }
-  }
+  drawEllipseOverlay(ellipseGroup, solution.ellipse, sizeScale);
+  // The canvas is always y-down; the export boxes may use the opposite
+  // convention, whose sweep flag differs, so recompute the arc per convention.
+  const canvasArc = pickArc(family, solution.ellipse, false);
+  const exportArc = pickArc(family, solution.ellipse, state.yUp);
+  drawArcOverlay(arcGroup, family, solution.ellipse, canvasArc);
+  renderResults(state, solutions, index, onCycleSolution);
+  renderExports(state, family, solution.ellipse, exportArc, canvasArc);
+  drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
 }
 
 // ---------------------------------------------------------------------------
@@ -589,12 +263,11 @@ function syncControlsFromState() {
 //
 // Continuous gestures (dragging a handle, sliding the apex range) fire render
 // on every step but commit a single history entry when the gesture ends, so
-// one drag is one undo — not hundreds.
+// one drag is one undo — not hundreds. The stack logic itself is the pure
+// History class; this file only supplies snapshots and applies what comes back.
 
 const TRACKED_KEYS = ['p0', 'p1', 't0Deg', 't1Deg', 'mode', 'param', 'paramPoint', 'solutionIndex'];
-let historyStack = [];
-let historyIndex = -1;
-const MAX_HISTORY = 200;
+const undoHistory = new History(200);
 
 /** Serialize just the tracked slice of state (used as a history snapshot). */
 function trackedSnapshot() {
@@ -604,47 +277,37 @@ function trackedSnapshot() {
 }
 
 function initHistory() {
-  historyStack = [trackedSnapshot()];
-  historyIndex = 0;
+  undoHistory.init(trackedSnapshot());
   updateHistoryButtons();
 }
 
 /** Record the current tracked state as a new history entry, if it changed. */
 function commitHistory() {
-  const snap = trackedSnapshot();
-  if (snap === historyStack[historyIndex]) return; // nothing tracked changed
-  // Drop any redo branch, then append.
-  historyStack.length = historyIndex + 1;
-  historyStack.push(snap);
-  if (historyStack.length > MAX_HISTORY) historyStack.shift();
-  historyIndex = historyStack.length - 1;
-  updateHistoryButtons();
+  if (undoHistory.commit(trackedSnapshot())) updateHistoryButtons();
 }
 
-/** Overlay the tracked slice at `historyIndex` onto the live state and redraw. */
-function applyHistoryEntry() {
-  Object.assign(state, JSON.parse(historyStack[historyIndex]));
+/** Overlay a restored snapshot onto the live state and redraw. */
+function applySnapshot(snap) {
+  Object.assign(state, JSON.parse(snap));
   render();
   updateHistoryButtons();
 }
 
 function undo() {
-  if (historyIndex <= 0) return;
-  historyIndex--;
-  applyHistoryEntry();
+  const snap = undoHistory.undo();
+  if (snap !== null) applySnapshot(snap);
 }
 
 function redo() {
-  if (historyIndex >= historyStack.length - 1) return;
-  historyIndex++;
-  applyHistoryEntry();
+  const snap = undoHistory.redo();
+  if (snap !== null) applySnapshot(snap);
 }
 
 function updateHistoryButtons() {
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
-  if (undoBtn) undoBtn.disabled = historyIndex <= 0;
-  if (redoBtn) redoBtn.disabled = historyIndex >= historyStack.length - 1;
+  if (undoBtn) undoBtn.disabled = !undoHistory.canUndo();
+  if (redoBtn) redoBtn.disabled = !undoHistory.canRedo();
 }
 
 document.getElementById('undo-btn').addEventListener('click', undo);
@@ -661,6 +324,10 @@ document.addEventListener('keydown', (e) => {
   if (isRedo) redo();
   else undo();
 });
+
+// ---------------------------------------------------------------------------
+// Controls: text inputs, mode buttons, arc toggle, y-up toggle
+// ---------------------------------------------------------------------------
 
 document.getElementById('p0-xy').addEventListener('change', (e) => {
   const p = parsePoint(e.target.value);
@@ -702,71 +369,28 @@ document.getElementById('t1-deg').addEventListener('change', (e) => {
 // ellipse, so the shape doesn't jump. "Roundest" is the exception: it has no
 // value to carry and deliberately overrides the current ellipse.
 
-/** Midpoint (by parametric angle) of the small arc of `e` between `p0` and `p1`. */
-function smallArcMidpoint(e, p0, p1) {
-  const phi0 = ellipseParam(e, p0);
-  const phi1 = ellipseParam(e, p1);
-  const delta = wrapAngle(phi1 - phi0); // shortest signed sweep, |delta| <= PI
-  return ellipsePoint(e, phi0 + delta / 2);
-}
-
 /**
  * Set the new mode's control value so solving it reproduces `prev` (the
- * currently displayed solution). Also picks the matching solution index for
- * modes that can yield two members with the same value.
+ * currently displayed solution), and pick the matching solution index for the
+ * value modes that can yield two members. The value/point derivation and the
+ * index match are pure geometry (continuityParam / matchSolutionIndex in
+ * ellipse.js); this only wires the result into `state`.
  */
 function applyModeContinuity(mode, prev) {
-  const e = prev.ellipse;
-  switch (mode) {
-    case 'apex':
-      if (typeof prev.a === 'number') state.param = prev.a;
-      break;
-    case 'rotation':
-      // The rotation solve is 90-degree periodic, so fold the ellipse's axis
-      // angle into the slider's [0, 90) window; it reproduces the same member.
-      state.param = ((e.thetaDeg % 90) + 90) % 90;
-      break;
-    case 'ratio':
-      state.param = e.rx / e.ry;
-      break;
-    case 'rx':
-      state.param = e.rx;
-      break;
-    case 'ry':
-      state.param = e.ry;
-      break;
-    case 'through':
-      state.paramPoint = smallArcMidpoint(e, state.p0, state.p1);
-      break;
-    default:
-      break;
-  }
+  const carried = continuityParam(mode, prev, state.p0, state.p1);
+  if ('param' in carried) state.param = carried.param;
+  if ('paramPoint' in carried) state.paramPoint = carried.paramPoint;
+
   // ratio/rx/ry can produce two ellipses for one value; select the one whose
   // family position (apex `a`) matches the previous ellipse so it stays put.
   if (typeof prev.a === 'number') {
-    let family;
-    try {
-      family = buildFamily();
-    } catch {
-      return;
-    }
     let sols;
     try {
-      sols = currentSolutions(family).filter((s) => s.ellipse);
+      sols = currentSolutions(buildFamily());
     } catch {
       return;
     }
-    if (sols.length <= 1) return;
-    let bestIdx = 0;
-    let bestD = Infinity;
-    sols.forEach((sol, i) => {
-      const d = Math.abs((sol.a ?? 0) - prev.a);
-      if (d < bestD) {
-        bestD = d;
-        bestIdx = i;
-      }
-    });
-    state.solutionIndex = bestIdx;
+    if (sols.length > 1) state.solutionIndex = matchSolutionIndex(sols, prev.a);
   }
 }
 
@@ -922,11 +546,6 @@ function fitToContent() {
   const focus = { bounds: controlPointsBounds(state), anchor: state.p0 };
   view = fitView(contentBounds(state, lastEllipse), aspect, focus);
   render();
-}
-
-/** Whether world point `pt` lies within the given viewBox `v`. */
-function pointInView(pt, v) {
-  return pt.x >= v.x && pt.x <= v.x + v.w && pt.y >= v.y && pt.y <= v.y + v.h;
 }
 
 /**

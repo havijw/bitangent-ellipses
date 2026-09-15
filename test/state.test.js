@@ -22,7 +22,13 @@ import {
   fitView,
   zoomView,
   niceStep,
+  handleOffset,
+  pointInView,
+  clipLineToView,
+  resultRows,
+  History,
 } from '../src/state.js';
+import { formatDisplay } from '../src/format.js';
 
 test('defaultState returns an independent deep copy', () => {
   const a = defaultState();
@@ -214,4 +220,94 @@ test('view constants are internally consistent', () => {
   assert.equal(DEFAULT_VIEW.w, VIEW_W);
   assert.equal(DEFAULT_VIEW.h, VIEW_H);
   assert.ok(MIN_VIEW_W < MAX_VIEW_W);
+});
+
+
+test('formatDisplay rounds to 3 decimals, drops trailing zeros, and normalizes -0', () => {
+  assert.equal(formatDisplay(1.5), '1.5');
+  assert.equal(formatDisplay(1.5000004), '1.5');
+  assert.equal(formatDisplay(2), '2');
+  assert.equal(formatDisplay(1.23456), '1.235');
+  assert.equal(formatDisplay(-0), '0');
+  assert.equal(formatDisplay(-0.0004), '0'); // rounds to -0, then normalized
+});
+
+test('handleOffset places the point len units away along the given angle', () => {
+  const p = { x: 10, y: 20 };
+  const right = handleOffset(p, 0, 5);
+  assert.ok(Math.abs(right.x - 15) < 1e-9 && Math.abs(right.y - 20) < 1e-9);
+  const down = handleOffset(p, 90, 5); // +y is "down" in the SVG convention
+  assert.ok(Math.abs(down.x - 10) < 1e-9 && Math.abs(down.y - 25) < 1e-9);
+});
+
+test('pointInView reports containment inclusive of the edges', () => {
+  const v = { x: 0, y: 0, w: 100, h: 50 };
+  assert.ok(pointInView({ x: 50, y: 25 }, v));
+  assert.ok(pointInView({ x: 0, y: 0 }, v), 'the top-left corner counts as inside');
+  assert.ok(pointInView({ x: 100, y: 50 }, v), 'the bottom-right corner counts as inside');
+  assert.ok(!pointInView({ x: -1, y: 25 }, v));
+  assert.ok(!pointInView({ x: 50, y: 51 }, v));
+});
+
+test('clipLineToView returns the span across the view for a diagonal line', () => {
+  const v = { x: 0, y: 0, w: 100, h: 100 };
+  const seg = clipLineToView({ x: 50, y: 50 }, { x: 1, y: 1 }, v);
+  assert.ok(seg, 'diagonal through the center must cross the view');
+  const xs = seg.map((q) => q.x).sort((a, b) => a - b);
+  const ys = seg.map((q) => q.y).sort((a, b) => a - b);
+  assert.ok(Math.abs(xs[0] - 0) < 1e-9 && Math.abs(xs[1] - 100) < 1e-9);
+  assert.ok(Math.abs(ys[0] - 0) < 1e-9 && Math.abs(ys[1] - 100) < 1e-9);
+});
+
+test('clipLineToView handles axis-aligned directions and misses', () => {
+  const v = { x: 0, y: 0, w: 100, h: 100 };
+  // Vertical line at x = 40 spans the full height.
+  const vert = clipLineToView({ x: 40, y: 10 }, { x: 0, y: 1 }, v);
+  assert.ok(vert);
+  assert.ok(vert.every((q) => Math.abs(q.x - 40) < 1e-9));
+  const yspan = vert.map((q) => q.y).sort((a, b) => a - b);
+  assert.ok(Math.abs(yspan[0] - 0) < 1e-9 && Math.abs(yspan[1] - 100) < 1e-9);
+  // A vertical line outside the view (x = 200) misses entirely.
+  assert.equal(clipLineToView({ x: 200, y: 10 }, { x: 0, y: 1 }, v), null);
+});
+
+test('resultRows flips rotation and center-y under the y-up convention', () => {
+  const e = { rx: 3, ry: 2, thetaDeg: 30, cx: 10, cy: -4, eccentricity: 0.745 };
+  const down = Object.fromEntries(resultRows(e, false));
+  assert.equal(down['rotation (deg)'], '30');
+  assert.equal(down['center'], '10, -4');
+  assert.equal(down['rx (semi-major)'], '3');
+  const up = Object.fromEntries(resultRows(e, true));
+  assert.equal(up['rotation (deg)'], '-30', 'rotation sign flips');
+  assert.equal(up['center'], '10, 4', 'center y flips');
+});
+
+test('History records, undoes, and redoes opaque snapshots', () => {
+  const h = new History();
+  h.init('a');
+  assert.ok(!h.canUndo() && !h.canRedo());
+  assert.ok(h.commit('b'));
+  assert.ok(!h.commit('b'), 'an unchanged snapshot is not recorded');
+  assert.ok(h.commit('c'));
+  assert.ok(h.canUndo() && !h.canRedo());
+  assert.equal(h.undo(), 'b');
+  assert.equal(h.undo(), 'a');
+  assert.equal(h.undo(), null, 'cannot undo past the start');
+  assert.equal(h.redo(), 'b');
+  // Committing after an undo drops the stale redo branch ('c').
+  assert.ok(h.commit('d'));
+  assert.ok(!h.canRedo());
+  assert.equal(h.undo(), 'b');
+  assert.equal(h.redo(), 'd');
+});
+
+test('History caps the stack at maxEntries, dropping the oldest', () => {
+  const h = new History(3);
+  h.init('0');
+  h.commit('1');
+  h.commit('2'); // stack now ['0','1','2'], full
+  h.commit('3'); // drops '0' -> ['1','2','3']
+  assert.equal(h.undo(), '2');
+  assert.equal(h.undo(), '1');
+  assert.equal(h.undo(), null, "the oldest entry ('0') was dropped");
 });

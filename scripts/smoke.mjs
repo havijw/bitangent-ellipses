@@ -205,7 +205,38 @@ async function main() {
   const vb = (snapshot.viewBox || '').split(/\s+/).map(Number);
   assert(vb.length === 4 && vb.every(Number.isFinite), 'viewBox is four finite numbers');
 
-  console.log('PASS: page boots, solves, and exports a well-formed arc.');
+  // 6. Click through every fifth-constraint mode. The default page only ever
+  // exercises "roundest", so this is the one guard that the mode-switch,
+  // control-sync (slider/text/none field kinds), and per-mode drawing/panel
+  // wiring all survive \u2014 the class of regression the module split could
+  // introduce. Each click must not throw and must leave the page responsive
+  // (an unsolvable value shows the error box, which is fine); the final
+  // "roundest" click must land back on a solved ellipse with a fresh arc.
+  const modes = await cdp.evalValue(
+    `Array.from(document.querySelectorAll('#mode-buttons button')).map((b) => b.dataset.mode)`,
+  );
+  assert(Array.isArray(modes) && modes.length >= 6, 'mode buttons are present');
+  for (const mode of [...modes, 'roundest']) {
+    await cdp.evalValue(`document.querySelector('#mode-buttons button[data-mode="${mode}"]').click(); true`);
+    await sleep(30);
+    assert(!pageError, `mode "${mode}" click throws no page exception (got: ${pageError})`);
+    const responsive = await cdp.evalValue(
+      `!!document.getElementById('results') && !!document.getElementById('canvas').getAttribute('viewBox')`,
+    );
+    assert(responsive, `mode "${mode}" leaves the page responsive`);
+  }
+  const afterCycle = JSON.parse(
+    await cdp.evalValue(`JSON.stringify({
+      path: document.getElementById('export-path').value,
+      results: document.getElementById('results').textContent,
+      error: (document.getElementById('error-box').style.display !== 'none')
+        ? document.getElementById('error-box').textContent : null,
+    })`),
+  );
+  assert(!afterCycle.error, `back on "roundest" solves without error (got: ${afterCycle.error})`);
+  assert(/^M\s/.test(afterCycle.path), 'roundest re-exports a well-formed path after cycling modes');
+
+  console.log('PASS: page boots, solves, exports a well-formed arc, and cycles all modes.');
   console.log(`  path:     ${snapshot.path}`);
   console.log(`  ARC type: ${arc.type} ${arc.direction} ${arc.arc_size}`);
   finish(0);

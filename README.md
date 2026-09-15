@@ -12,8 +12,14 @@ A zero-dependency project: pure JavaScript (Node's built-in test runner, a
 ellipse-tool/
   src/ellipse.js     pure math: the conic family, solvers, ellipse geometry
   src/svg.js         SVG arc-flag computation and path/markup builders
-  src/state.js       pure UI logic: state (de)serialization, input parsing, view math
-  ui.js              browser wiring (DOM + events); pure logic lives in src/state.js
+  src/format.js      the shared display-rounding helper
+  src/state.js       pure UI logic: state (de)serialization, input parsing,
+                     view/screen geometry, results formatting, undo/redo
+  src/ui/dom.js      generic SVG/DOM builders (no app state)
+  src/ui/scene.js    canvas drawing (grid, tangents, ellipse, arc, handles)
+  src/ui/panels.js   sidebar (results, SVG export boxes, control sync)
+  ui.js              orchestrator: owns state + view, the render/solve cycle,
+                     event wiring; pure logic lives in src/, view code in src/ui/
   index.html         the UI's page shell
   serve.js           static file server (needed because browsers block ES
                       module imports from file://)

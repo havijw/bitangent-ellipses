@@ -21,19 +21,31 @@ plus an SVG arc export. It has a browser UI and a Node test suite.
 ```
 src/ellipse.js   pure math: the conic pencil, solvers, ellipse geometry
 src/svg.js       SVG arc-flag computation and path/markup builders
-src/state.js     pure UI logic: state (de)serialization, input parsing, view math
-ui.js            browser wiring (DOM + events); pure logic lives in src/state.js
+src/format.js    the shared display-rounding helper (formatDisplay)
+src/state.js     pure UI logic: state (de)serialization, input parsing, view/
+                 screen geometry, results formatting, undo/redo history
+src/ui/dom.js    generic SVG/DOM builders (el, cssVar, handles) — no app state
+src/ui/scene.js  canvas drawing: grid, tangents/chord, ellipse, arc, handles
+src/ui/panels.js sidebar: results readout, SVG export boxes, control sync
+ui.js            the orchestrator: owns state + view, runs the render/solve
+                 cycle, wires events, and drives src/ui/* with what they need
 index.html       the UI's page shell
 serve.js         ~20-line static file server (browsers block ES imports over file://)
 scripts/smoke.mjs  headless-browser smoke test (opt-in; not run by `node --test`)
 test/            node:test suites (everything here IS auto-run by `node --test`)
 ```
 
-Keep `ui.js` thin: DOM reads/writes and event listeners only. Any logic that
-can be expressed as a pure function (parsing, serialization, geometry, framing)
+Keep `ui.js` an orchestrator: state ownership, the render/solve cycle, event
+wiring, and persistence. Any logic that can be expressed as a pure function
+(parsing, serialization, geometry, framing, results formatting, undo/redo)
 belongs in `src/state.js` (or the math modules) where it can be unit-tested
-without a browser. Do not put files that aren't node:test suites under `test/`
-— Node's runner auto-executes everything in a `test/` directory.
+without a browser. Browser-only view code that isn't pure — building DOM
+nodes, drawing into the SVG, writing the sidebar — belongs in `src/ui/*.js`
+(`dom.js` for generic builders, `scene.js` for the canvas, `panels.js` for the
+sidebar); those take everything they need as arguments and reach for no module
+globals, so `ui.js` stays the only place that knows the current state. Do not
+put files that aren't node:test suites under `test/` — Node's runner
+auto-executes everything in a `test/` directory.
 
 ## Key invariants
 

@@ -10,6 +10,8 @@
  * truncation) is a pure-function bug that a unit test can pin down.
  */
 
+import { formatDisplay } from './format.js';
+
 // Canvas design size, in world units, at the default (unzoomed) view. Screen
 // sizes for points/handles are scaled by view.w / VIEW_W so they stay constant
 // on screen at any zoom.
@@ -263,4 +265,135 @@ export function niceStep(span, divisions = 16) {
   const pow = Math.pow(10, Math.floor(Math.log10(target)));
   for (const m of [1, 2, 5, 10]) if (m * pow >= target) return m * pow;
   return 10 * pow;
+}
+
+
+// ---------------------------------------------------------------------------
+// Screen / canvas geometry (pure; the browser layer supplies the live view)
+// ---------------------------------------------------------------------------
+
+/**
+ * The endpoint of a tangent handle: the point `len` world units from `p` in
+ * the direction `deg` (degrees, measured from +x toward +y). `len` is passed
+ * in already scaled for the current zoom so this stays a pure function.
+ */
+export function handleOffset(p, deg, len) {
+  const rad = (deg * Math.PI) / 180;
+  return { x: p.x + len * Math.cos(rad), y: p.y + len * Math.sin(rad) };
+}
+
+/** Whether world point `pt` lies within the viewBox rectangle `v`. */
+export function pointInView(pt, v) {
+  return pt.x >= v.x && pt.x <= v.x + v.w && pt.y >= v.y && pt.y <= v.y + v.h;
+}
+
+/**
+ * Clip the infinite line through `p` with direction `dir` to the viewBox `v`
+ * (Liang–Barsky). Returns the two edge-intersection points, or null if the
+ * line misses the view entirely. Handles axis-aligned directions (a zero
+ * component means "parallel to that pair of edges").
+ */
+export function clipLineToView(p, dir, v) {
+  const xmin = v.x;
+  const xmax = v.x + v.w;
+  const ymin = v.y;
+  const ymax = v.y + v.h;
+  const ps = [-dir.x, dir.x, -dir.y, dir.y];
+  const qs = [p.x - xmin, xmax - p.x, p.y - ymin, ymax - p.y];
+  let tmin = -Infinity;
+  let tmax = Infinity;
+  for (let i = 0; i < 4; i++) {
+    if (ps[i] === 0) {
+      if (qs[i] < 0) return null; // parallel to this edge and outside it
+    } else {
+      const t = qs[i] / ps[i];
+      if (ps[i] < 0) tmin = Math.max(tmin, t);
+      else tmax = Math.min(tmax, t);
+    }
+  }
+  if (tmin > tmax) return null;
+  return [
+    { x: p.x + dir.x * tmin, y: p.y + dir.y * tmin },
+    { x: p.x + dir.x * tmax, y: p.y + dir.y * tmax },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Results presentation (pure: label/value pairs for the results panel)
+// ---------------------------------------------------------------------------
+
+/**
+ * The rows shown in the results panel for one solved `ellipse`, as
+ * `[label, value]` pairs with values already display-rounded. When `yUp` is
+ * set (the user's coordinates point up) the rotation sign and the center's y
+ * flip together — same origin, mirrored y — matching the export boxes.
+ */
+export function resultRows(ellipse, yUp) {
+  const rot = yUp ? -ellipse.thetaDeg : ellipse.thetaDeg;
+  const cy = yUp ? -ellipse.cy : ellipse.cy;
+  const f = formatDisplay;
+  return [
+    ['rx (semi-major)', f(ellipse.rx)],
+    ['ry (semi-minor)', f(ellipse.ry)],
+    ['rotation (deg)', f(rot)],
+    ['center', `${f(ellipse.cx)}, ${f(cy)}`],
+    ['eccentricity', f(ellipse.eccentricity)],
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Undo / redo history (pure: operates on opaque snapshot strings)
+// ---------------------------------------------------------------------------
+
+/**
+ * A linear undo/redo stack of opaque snapshot strings. It knows nothing about
+ * what a snapshot contains — the caller serializes the tracked slice of state,
+ * hands the string in, and applies whatever string comes back out. Committing
+ * drops any redo branch; the stack is capped at `maxEntries` (oldest dropped).
+ */
+export class History {
+  constructor(maxEntries = 200) {
+    this.maxEntries = maxEntries;
+    this.stack = [];
+    this.index = -1;
+  }
+
+  /** Seed the stack with the starting snapshot. */
+  init(snapshot) {
+    this.stack = [snapshot];
+    this.index = 0;
+  }
+
+  /** Record `snapshot` as a new entry unless it equals the current one.
+   *  Returns true if an entry was added. */
+  commit(snapshot) {
+    if (snapshot === this.stack[this.index]) return false;
+    this.stack.length = this.index + 1; // drop the redo branch
+    this.stack.push(snapshot);
+    if (this.stack.length > this.maxEntries) this.stack.shift();
+    this.index = this.stack.length - 1;
+    return true;
+  }
+
+  canUndo() {
+    return this.index > 0;
+  }
+
+  canRedo() {
+    return this.index < this.stack.length - 1;
+  }
+
+  /** Step back and return the now-current snapshot, or null if at the start. */
+  undo() {
+    if (!this.canUndo()) return null;
+    this.index--;
+    return this.stack[this.index];
+  }
+
+  /** Step forward and return the now-current snapshot, or null if at the end. */
+  redo() {
+    if (!this.canRedo()) return null;
+    this.index++;
+    return this.stack[this.index];
+  }
 }

@@ -16,6 +16,8 @@
  * or a third point).
  */
 
+import { formatDisplay } from './format.js';
+
 export class EllipseInputError extends Error {
   constructor(message) {
     super(message);
@@ -594,6 +596,24 @@ export const MODES = ['roundest', 'apex', 'rotation', 'ratio', 'rx', 'ry', 'thro
  */
 export function solveEllipse({ p0, p1, t0, t1, mode = 'roundest', param }) {
   const family = new EllipseFamily(p0, t0, p1, t1);
+  return { family, ...familySolutions(family, mode, param) };
+}
+
+/**
+ * Apply one fifth-constraint `mode` to an already-built `family`, returning
+ * `{ solutions, rejected }` (real ellipses and the discarded non-ellipse
+ * candidates, respectively). `param` is a number for apex/rotation/ratio/rx/ry
+ * and a `{x, y}` point for 'through'.
+ *
+ * This is the single source of truth for the mode dispatch and its app-level
+ * guards; both `solveEllipse` and the browser UI call through here so their
+ * behavior can never drift apart. The guards reject inputs that would be
+ * geometrically meaningless given the "rx is the semi-major axis" invariant:
+ * an aspect ratio below 1 (which would swap the axis roles) and an rx shorter
+ * than half the chord P0P1 (no ellipse through both points can have a
+ * semi-major axis shorter than half of one of its chords).
+ */
+export function familySolutions(family, mode, param) {
   let candidates;
   switch (mode) {
     case 'roundest':
@@ -605,20 +625,89 @@ export function solveEllipse({ p0, p1, t0, t1, mode = 'roundest', param }) {
     case 'rotation':
       candidates = [family.withRotation(Number(param))];
       break;
-    case 'ratio':
-      candidates = family.withAspectRatio(Number(param));
+    case 'ratio': {
+      const k = Number(param);
+      if (!(k >= 1)) {
+        throw new EllipseInputError('Aspect ratio (major / minor) must be at least 1.');
+      }
+      candidates = family.withAspectRatio(k);
       break;
+    }
     case 'rx':
-    case 'ry':
-      candidates = family.withRadius(mode, Number(param));
+    case 'ry': {
+      const value = Number(param);
+      if (mode === 'rx' && value < family.halfChord) {
+        const min = formatDisplay(family.halfChord);
+        throw new EllipseInputError(
+          `rx must be at least ${min} (half the distance between P0 and P1) \u2014 no ellipse through both points can have a shorter semi-major axis.`,
+        );
+      }
+      candidates = family.withRadius(mode, value);
       break;
+    }
     case 'through':
       candidates = [family.throughPoint(param)];
       break;
     default:
       throw new EllipseInputError(`Unknown mode '${mode}'; expected one of ${MODES.join(', ')}`);
   }
-  const solutions = candidates.filter((s) => s.ellipse);
-  const rejected = candidates.filter((s) => !s.ellipse);
-  return { family, solutions, rejected };
+  return {
+    solutions: candidates.filter((s) => s.ellipse),
+    rejected: candidates.filter((s) => !s.ellipse),
+  };
+}
+
+/** Midpoint (by parametric angle) of the small arc of `e` between `p0` and `p1`. */
+export function smallArcMidpoint(e, p0, p1) {
+  const phi0 = ellipseParam(e, p0);
+  const phi1 = ellipseParam(e, p1);
+  const delta = wrapAngle(phi1 - phi0); // shortest signed sweep, |delta| <= PI
+  return ellipsePoint(e, phi0 + delta / 2);
+}
+
+/**
+ * The control value for `mode` that reproduces `prev` (a solved solution, i.e.
+ * `{ ellipse, a }`), so switching modes keeps the displayed shape put. Returns
+ * `{ param }` for the value modes, `{ paramPoint }` for 'through', and `{}`
+ * when there is nothing to carry ('roundest', or apex without a family
+ * position). `p0`/`p1` are the chord endpoints, needed for 'through'.
+ */
+export function continuityParam(mode, prev, p0, p1) {
+  const e = prev.ellipse;
+  switch (mode) {
+    case 'apex':
+      return typeof prev.a === 'number' ? { param: prev.a } : {};
+    case 'rotation':
+      // The rotation solve is 90-degree periodic, so fold the ellipse's axis
+      // angle into the slider's [0, 90) window; it reproduces the same member.
+      return { param: ((e.thetaDeg % 90) + 90) % 90 };
+    case 'ratio':
+      return { param: e.rx / e.ry };
+    case 'rx':
+      return { param: e.rx };
+    case 'ry':
+      return { param: e.ry };
+    case 'through':
+      return { paramPoint: smallArcMidpoint(e, p0, p1) };
+    default:
+      return {};
+  }
+}
+
+/**
+ * Index of the solution whose family position (apex `a`) is closest to
+ * `targetA`. Used to keep the displayed member fixed when a value mode
+ * (ratio/rx/ry) offers two ellipses for the same value.
+ */
+export function matchSolutionIndex(solutions, targetA) {
+  let bestIdx = 0;
+  let bestD = Infinity;
+  solutions.forEach((sol, i) => {
+    const d = Math.abs((sol.a ?? 0) - targetA);
+    if (d < bestD) {
+      bestD = d;
+      bestIdx = i;
+    }
+  });
+  return bestIdx;
 }

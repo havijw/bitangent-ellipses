@@ -7,9 +7,14 @@ import {
   classifyConic,
   evalConic,
   ellipsePoint,
+  ellipseParam,
   ellipseTangent,
   tangentDirection,
   solveEllipse,
+  familySolutions,
+  continuityParam,
+  matchSolutionIndex,
+  smallArcMidpoint,
 } from '../src/ellipse.js';
 
 const EPS = 1e-6;
@@ -206,4 +211,151 @@ test('conicToEllipse always reports rx as the semi-major radius', () => {
   assert.ok(e.rx >= e.ry);
   assert.ok(Math.abs(e.rx - 2) < EPS);
   assert.ok(Math.abs(e.ry - 1) < EPS);
+});
+
+
+// ---------------------------------------------------------------------------
+// familySolutions: the shared mode dispatch and its app-level guards. The
+// browser UI and the headless solveEllipse entry point both route through this
+// one function, so these tests protect the behavior no matter which calls it.
+// ---------------------------------------------------------------------------
+
+// The default UI configuration: two points with non-parallel tangents, giving
+// an asymmetric family where the value modes have genuine two-solution ranges.
+function defaultFamily() {
+  return new EllipseFamily({ x: 160, y: 380 }, { deg: -35 }, { x: 560, y: 220 }, { deg: 20 });
+}
+
+test('familySolutions rejects an aspect ratio below 1', () => {
+  const family = defaultFamily();
+  assert.throws(
+    () => familySolutions(family, 'ratio', 0.8),
+    (err) => err instanceof EllipseInputError && /at least 1/.test(err.message),
+  );
+  // At exactly 1 (a circle-like member) it must not throw the guard.
+  assert.doesNotThrow(() => familySolutions(family, 'ratio', 1));
+});
+
+test('familySolutions rejects an rx shorter than half the chord, and names the bound', () => {
+  const family = defaultFamily();
+  const tooSmall = family.halfChord - 1;
+  assert.throws(
+    () => familySolutions(family, 'rx', tooSmall),
+    (err) =>
+      err instanceof EllipseInputError &&
+      err.message.includes(String(Number(family.halfChord.toFixed(3)) + 0)),
+  );
+  // ry has no such lower bound, so the same value must not trip the rx guard.
+  assert.doesNotThrow(() => familySolutions(family, 'ry', tooSmall));
+});
+
+test('familySolutions matches solveEllipse for the un-guarded modes', () => {
+  const p0 = { x: 160, y: 380 };
+  const p1 = { x: 560, y: 220 };
+  const t0 = { deg: -35 };
+  const t1 = { deg: 20 };
+  for (const [mode, param] of [
+    ['roundest', undefined],
+    ['apex', 0.3],
+    ['rotation', 25],
+    ['through', { x: 380, y: 420 }],
+  ]) {
+    const viaEntry = solveEllipse({ p0, p1, t0, t1, mode, param });
+    const viaFamily = familySolutions(defaultFamily(), mode, param);
+    assert.equal(viaFamily.solutions.length, viaEntry.solutions.length, `mode ${mode}`);
+    if (viaEntry.solutions.length) {
+      const a = viaEntry.solutions[0].ellipse;
+      const b = viaFamily.solutions[0].ellipse;
+      assert.ok(Math.abs(a.rx - b.rx) < EPS && Math.abs(a.ry - b.ry) < EPS, `mode ${mode}`);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Mode-switch continuity: continuityParam must yield a value that, re-solved
+// in the new mode, reproduces the previously displayed ellipse exactly.
+// ---------------------------------------------------------------------------
+
+function sameEllipse(a, b, tol = 1e-3) {
+  return (
+    Math.abs(a.rx - b.rx) <= tol * a.rx &&
+    Math.abs(a.ry - b.ry) <= tol * a.ry &&
+    Math.abs(a.cx - b.cx) <= tol * (Math.abs(a.cx) + 1) &&
+    Math.abs(a.cy - b.cy) <= tol * (Math.abs(a.cy) + 1)
+  );
+}
+
+// Re-solve `mode` at the carried value and pick the member matching `targetA`,
+// mirroring what applyModeContinuity does in the UI.
+function resolve(family, mode, carried, targetA) {
+  const param = 'paramPoint' in carried ? carried.paramPoint : carried.param;
+  const sols = familySolutions(family, mode, param).solutions;
+  return sols[matchSolutionIndex(sols, targetA)];
+}
+
+test('continuityParam reproduces the same ellipse across every value mode', () => {
+  const family = defaultFamily();
+  const p0 = family.p0;
+  const p1 = family.p1;
+  // Mid-family members, away from the flat near-collapse end where rotation is
+  // numerically unreachable (a documented limitation of rotation mode).
+  for (const a of [0.15, 0.3, 0.45]) {
+    const start = family.atApex(a);
+    for (const mode of ['apex', 'rotation', 'ratio', 'rx', 'ry']) {
+      const carried = continuityParam(mode, start, p0, p1);
+      const got = resolve(family, mode, carried, start.a);
+      assert.ok(got && got.ellipse, `mode ${mode} at a=${a} produced no ellipse`);
+      assert.ok(
+        sameEllipse(start.ellipse, got.ellipse),
+        `mode ${mode} at a=${a} did not reproduce the ellipse`,
+      );
+    }
+  }
+});
+
+test('continuityParam for through mode picks the small-arc midpoint, on the ellipse', () => {
+  const family = defaultFamily();
+  const start = family.atApex(0.3);
+  const carried = continuityParam('through', start, family.p0, family.p1);
+  assert.ok('paramPoint' in carried);
+  // The chosen point lies on the analytic ellipse and reproduces it when the
+  // family is re-solved to pass through it.
+  assertOnConic(start.coeffs, carried.paramPoint, 1e-6);
+  const got = family.throughPoint(carried.paramPoint);
+  assert.ok(sameEllipse(start.ellipse, got.ellipse));
+});
+
+test('continuityParam carries nothing for roundest', () => {
+  const family = defaultFamily();
+  const start = family.roundest();
+  assert.deepEqual(continuityParam('roundest', start, family.p0, family.p1), {});
+});
+
+test('smallArcMidpoint lies on the ellipse and inside the endpoints span', () => {
+  const family = defaultFamily();
+  const e = family.atApex(0.3).ellipse;
+  const p0 = family.p0;
+  const p1 = family.p1;
+  const mid = smallArcMidpoint(e, p0, p1);
+  // On the ellipse.
+  const back = ellipseParam(e, mid);
+  const round = ellipsePoint(e, back);
+  assert.ok(Math.hypot(round.x - mid.x, round.y - mid.y) < 1e-6);
+  // Its parametric angle sits strictly between the endpoints' angles on the
+  // short side (the signed sweep from phi0 to the midpoint is half the total).
+  const phi0 = ellipseParam(e, p0);
+  const phi1 = ellipseParam(e, p1);
+  const wrap = (t) => Math.atan2(Math.sin(t), Math.cos(t));
+  const full = wrap(phi1 - phi0);
+  const half = wrap(back - phi0);
+  assert.ok(Math.abs(half - full / 2) < 1e-6, 'midpoint is not the parametric midpoint');
+});
+
+test('matchSolutionIndex returns the member whose apex is nearest the target', () => {
+  const sols = [{ a: 0.1 }, { a: 0.25 }, { a: 0.48 }];
+  assert.equal(matchSolutionIndex(sols, 0.24), 1);
+  assert.equal(matchSolutionIndex(sols, 0.5), 2);
+  assert.equal(matchSolutionIndex(sols, 0.0), 0);
+  // Missing `a` is treated as 0 so a lone/degenerate solution still resolves.
+  assert.equal(matchSolutionIndex([{}], 0.9), 0);
 });
