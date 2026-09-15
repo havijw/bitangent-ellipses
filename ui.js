@@ -309,14 +309,16 @@ function renderResults(solutions, index = 0) {
   // together (same origin, mirrored y), not just the rotation alone.
   const rot = state.yUp ? -e.thetaDeg : e.thetaDeg;
   const cy = state.yUp ? -e.cy : e.cy;
-  // Full precision, no rounding: numbers stringify to their shortest
-  // round-trippable form so nothing is lost when read or copied.
+  // Display values are rounded to at most 3 decimals to keep the result pane
+  // readable; trailing zeros are dropped (1.5, not 1.500). This is display-only
+  // — the URL hash, inputs, and export boxes stay lossless.
+  const show = (n) => String(Number(n.toFixed(3)) + 0);
   const rows = [
-    ['rx (semi-major)', e.rx],
-    ['ry (semi-minor)', e.ry],
-    ['rotation (deg)', rot],
-    ['center', `${e.cx}, ${cy}`],
-    ['eccentricity', e.eccentricity],
+    ['rx (semi-major)', show(e.rx)],
+    ['ry (semi-minor)', show(e.ry)],
+    ['rotation (deg)', show(rot)],
+    ['center', `${show(e.cx)}, ${show(cy)}`],
+    ['eccentricity', show(e.eccentricity)],
   ];
   box.innerHTML = rows
     .map(
