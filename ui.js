@@ -59,6 +59,38 @@ function zoomAbout(factor, fx, fy) {
   render();
 }
 
+// Last observed pixel size of the canvas element, so a resize can preserve the
+// current world-units-per-pixel scale.
+let canvasPixels = null;
+
+/**
+ * Keep the viewBox's aspect ratio matched to the canvas element's pixel aspect
+ * ratio. The SVG has no explicit preserveAspectRatio, so a mismatch letterboxes
+ * the viewBox (uniform scale + centering) and leaves the grid cut off along one
+ * pair of edges. Recompute view.w/view.h from the element's size — holding
+ * world-units-per-pixel constant and the view centered — so the grid always
+ * fills the element and content keeps its on-screen scale across a resize.
+ */
+function syncViewToCanvas() {
+  const rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const upp = canvasPixels && canvasPixels.w ? view.w / canvasPixels.w : view.w / rect.width;
+  const cx = view.x + view.w / 2;
+  const cy = view.y + view.h / 2;
+  view.w = rect.width * upp;
+  view.h = rect.height * upp;
+  view.x = cx - view.w / 2;
+  view.y = cy - view.h / 2;
+  canvasPixels = { w: rect.width, h: rect.height };
+  render();
+}
+
+if (typeof ResizeObserver !== 'undefined') {
+  // Fires once immediately (a no-op given the scale is already consistent) and
+  // then on every subsequent canvas resize.
+  new ResizeObserver(syncViewToCanvas).observe(svg);
+}
+
 // Key for the persisted configuration.
 const STORAGE_KEY = 'ellipse-tool:state';
 
