@@ -430,12 +430,25 @@ function renderResults(solutions, index = 0) {
   }
 }
 
+/**
+ * Grow a readonly export textarea to fit its content so nothing is clipped
+ * behind an inner scrollbar. Resetting to 'auto' first lets it shrink back
+ * when the content gets shorter; the +2 covers the 1px top/bottom border
+ * under box-sizing: border-box. The CSS min-height keeps an empty box sane.
+ */
+function autoSizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight + 2}px`;
+}
+
 function renderExports(family, ellipse) {
   const pathBox = document.getElementById('export-path');
   const arcParamBox = document.getElementById('export-arc-param');
   if (!family || !ellipse) {
     pathBox.value = '';
     arcParamBox.value = '';
+    autoSizeTextarea(pathBox);
+    autoSizeTextarea(arcParamBox);
     return;
   }
   // Recompute the arc in the export's coordinate convention: the sweep flag
@@ -448,6 +461,8 @@ function renderExports(family, ellipse) {
     null,
     2,
   );
+  autoSizeTextarea(pathBox);
+  autoSizeTextarea(arcParamBox);
   const { small } = arcSummary(family, ellipse);
   document.querySelectorAll('#arc-toggle button').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.arc === small);

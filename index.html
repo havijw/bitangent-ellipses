@@ -145,7 +145,8 @@
   }
   .export-box textarea {
     width: 100%;
-    height: 56px;
+    box-sizing: border-box;
+    min-height: 56px;
     background: #0f1729;
     color: var(--text);
     border: 1px solid var(--panel-border);
@@ -277,7 +278,7 @@
     </div>
     <div class="export-box">
       <label style="font-size:11px;color:var(--text-dim)">ARC path parameter (JSON)</label>
-      <textarea id="export-arc-param" readonly style="height:170px"></textarea>
+      <textarea id="export-arc-param" readonly></textarea>
       <button class="copy-btn" data-copy="export-arc-param">Copy JSON</button>
     </div>
     <div class="export-box">
