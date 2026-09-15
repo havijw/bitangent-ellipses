@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Ellipse from two tangents</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-border: #334155;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #38bdf8;
+    --accent-strong: #0ea5e9;
+    --p0-color: #22c55e;
+    --p1-color: #f87171;
+    --grid: #263449;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #canvas-wrap {
+    flex: 1 1 auto;
+    position: relative;
+    min-width: 0;
+  }
+  svg#canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: var(--bg);
+    cursor: crosshair;
+    touch-action: none;
+  }
+  /* Keep line widths constant on screen at every zoom level. */
+  svg#canvas line, svg#canvas path, svg#canvas circle { vector-effect: non-scaling-stroke; }
+  #zoom-controls {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: flex;
+    gap: 6px;
+    z-index: 2;
+  }
+  #zoom-controls button {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid var(--panel-border);
+    background: rgba(15, 23, 42, 0.85);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+  #zoom-controls button:hover { border-color: var(--accent); color: var(--accent); }
+  #zoom-controls button.reset { font-size: 12px; width: auto; padding: 0 10px; }
+  #zoom-hint {
+    position: absolute;
+    right: 12px;
+    bottom: 14px;
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    z-index: 2;
+    pointer-events: none;
+  }
+  #sidebar {
+    width: 340px;
+    flex: 0 0 340px;
+    background: var(--panel);
+    border-left: 1px solid var(--panel-border);
+    padding: 16px;
+    overflow-y: auto;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); margin: 18px 0 8px; }
+  p.hint { font-size: 12px; color: var(--text-dim); margin: 0 0 12px; line-height: 1.5; }
+  .field { margin-bottom: 8px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 3px; }
+  .row { display: flex; gap: 8px; }
+  .row > .field { flex: 1; }
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    background: #0f1729;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  input[type="range"] { width: 100%; }
+  select { cursor: pointer; }
+  .mode-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
+  .mode-buttons button {
+    font-size: 12px;
+    padding: 6px 4px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    background: #0f1729;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .mode-buttons button.active { background: var(--accent-strong); border-color: var(--accent-strong); color: #04121c; font-weight: 600; }
+  .results {
+    background: #0f1729;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .result-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; }
+  .result-row.big .value { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .result-row .label { font-size: 12px; color: var(--text-dim); }
+  .result-row .value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .error-box {
+    background: #3f1d1d;
+    border: 1px solid #7f1d1d;
+    color: #fecaca;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+  .export-box textarea {
+    width: 100%;
+    height: 56px;
+    background: #0f1729;
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    padding: 6px 8px;
+    resize: vertical;
+    margin-bottom: 4px;
+  }
+  .copy-btn {
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--panel-border);
+    background: #0f1729;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--text); }
+  .toggle-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+  .toggle-row input { margin: 0; }
+  .arc-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+  .arc-toggle button {
+    flex: 1;
+    font-size: 12px;
+    padding: 5px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    background: #0f1729;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .arc-toggle button.active { background: var(--accent-strong); border-color: var(--accent-strong); color: #04121c; font-weight: 600; }
+  #reset-btn {
+    width: 100%;
+    margin-top: 4px;
+    font-size: 12px;
+    padding: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    background: #0f1729;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  #reset-btn:hover { color: var(--text); }
+</style>
+</head>
+<body>
+  <div id="canvas-wrap">
+    <svg id="canvas" viewBox="0 0 800 600"></svg>
+    <div id="zoom-controls">
+      <button id="zoom-in" title="Zoom in">+</button>
+      <button id="zoom-out" title="Zoom out">&minus;</button>
+      <button id="zoom-reset" class="reset" title="Fit view to the ellipse and points">Fit</button>
+    </div>
+    <div id="zoom-hint">Scroll to zoom &middot; drag canvas to pan</div>
+  </div>
+  <div id="sidebar">
+    <h1>Ellipse from two tangents</h1>
+    <p class="hint">
+      Drag the green/red points and their tangent handles. Two points and two tangent slopes leave a
+      one-parameter family of ellipses; pick how to resolve it below.
+    </p>
+
+    <h2>Points</h2>
+    <div class="row">
+      <div class="field"><label>P0 x, y</label><input type="text" id="p0-xy" /></div>
+      <div class="field"><label>P1 x, y</label><input type="text" id="p1-xy" /></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Tangent at P0 (deg)</label><input type="text" id="t0-deg" /></div>
+      <div class="field"><label>Tangent at P1 (deg)</label><input type="text" id="t1-deg" /></div>
+    </div>
+
+    <h2>Fifth constraint</h2>
+    <div class="mode-buttons" id="mode-buttons">
+      <button data-mode="roundest">Roundest</button>
+      <button data-mode="apex">Apex slider</button>
+      <button data-mode="rotation">Rotation</button>
+      <button data-mode="ratio">Aspect ratio</button>
+      <button data-mode="rx">Radius rx</button>
+      <button data-mode="ry">Radius ry</button>
+      <button data-mode="through">Third point</button>
+    </div>
+    <div class="field" id="param-field" style="display:none">
+      <label id="param-label">Value</label>
+      <input type="range" id="param-range" min="0.001" max="0.999" step="0.001" style="display:none" />
+      <input type="text" id="param-text" style="display:none" />
+    </div>
+
+    <h2>Result</h2>
+    <div id="error-box" class="error-box" style="display:none"></div>
+    <div class="results" id="results"></div>
+
+    <h2>SVG export</h2>
+    <div class="toggle-row">
+      <input type="checkbox" id="yup-toggle" />
+      <label for="yup-toggle">Y-axis points up (flip for SVG output)</label>
+    </div>
+    <div class="arc-toggle" id="arc-toggle">
+      <button data-arc="small">Small arc</button>
+      <button data-arc="large">Large arc</button>
+    </div>
+    <div class="export-box">
+      <label style="font-size:11px;color:var(--text-dim)">ARC path parameter (JSON)</label>
+      <textarea id="export-arc-param" readonly style="height:170px"></textarea>
+      <button class="copy-btn" data-copy="export-arc-param">Copy JSON</button>
+    </div>
+    <div class="export-box">
+      <label style="font-size:11px;color:var(--text-dim)">Path (M...a...)</label>
+      <textarea id="export-path" readonly></textarea>
+      <button class="copy-btn" data-copy="export-path">Copy path</button>
+    </div>
+
+    <button id="reset-btn">Reset to defaults</button>
+  </div>
+
+  <script type="module" src="./ui.js"></script>
+</body>
+</html>

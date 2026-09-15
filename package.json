@@ -1,0 +1,14 @@
+{
+  "name": "ellipse-tool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local dev tool: compute an ellipse through two points with given tangent slopes, with SVG arc export.",
+  "scripts": {
+    "test": "node --test",
+    "serve": "node serve.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
