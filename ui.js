@@ -288,7 +288,6 @@ function drawHandles() {
 
 function makeDraggable(id, pos, r, color) {
   const c = el('circle', { cx: pos.x, cy: pos.y, r: r * sizeScale, fill: color, stroke: '#0b1220', 'stroke-width': 2 });
-  c.style.cursor = 'grab';
   c.dataset.handle = id;
   return c;
 }
@@ -519,12 +518,13 @@ svg.addEventListener('pointerdown', (e) => {
   if (handle) {
     dragging = handle;
     svg.setPointerCapture(e.pointerId);
+    svg.classList.add('dragging');
     return;
   }
   // Empty canvas: start a pan.
   panning = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
   svg.setPointerCapture(e.pointerId);
-  svg.style.cursor = 'grabbing';
+  svg.classList.add('dragging');
 });
 
 svg.addEventListener('pointermove', (e) => {
@@ -549,7 +549,7 @@ svg.addEventListener('pointermove', (e) => {
 function endPointer() {
   dragging = null;
   panning = null;
-  svg.style.cursor = 'crosshair';
+  svg.classList.remove('dragging');
 }
 svg.addEventListener('pointerup', endPointer);
 svg.addEventListener('pointercancel', endPointer);

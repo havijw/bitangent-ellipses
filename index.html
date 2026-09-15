@@ -36,11 +36,15 @@
     height: 100%;
     display: block;
     background: var(--bg);
-    cursor: crosshair;
+    cursor: move;
     touch-action: none;
   }
   /* Keep line widths constant on screen at every zoom level. */
   svg#canvas line, svg#canvas path, svg#canvas circle { vector-effect: non-scaling-stroke; }
+  /* Draggable control points show a grab cursor; everything (canvas or a
+     handle) becomes grabbing while a drag/pan is in progress. */
+  svg#canvas [data-handle] { cursor: grab; }
+  svg#canvas.dragging, svg#canvas.dragging [data-handle] { cursor: grabbing; }
   #zoom-controls {
     position: absolute;
     left: 12px;
