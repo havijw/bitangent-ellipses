@@ -11,7 +11,7 @@
  * uses the opposite convention; it does not change what's drawn here.
  */
 
-import { EllipseFamily, EllipseInputError, ellipsePolyline } from './src/ellipse.js';
+import { EllipseFamily, EllipseInputError, ellipsePolyline, ellipseParam, ellipsePoint, wrapAngle } from './src/ellipse.js';
 import { chooseArc, arcPath, arcPathParameter } from './src/svg.js';
 import {
   VIEW_W,
@@ -47,6 +47,7 @@ let sizeScale = 1;
 // The most recently solved ellipse, or null when the inputs have no ellipse.
 // `fitToContent` reads it to frame the view around the actual geometry.
 let lastEllipse = null;
+let lastSolution = null; // full solution object of the displayed ellipse (carries apex `a`)
 
 function applyView() {
   svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
@@ -212,6 +213,7 @@ function render() {
 
   // Reset each cycle; set again below only when an ellipse is actually solved.
   lastEllipse = null;
+  lastSolution = null;
 
   const errorBox = document.getElementById('error-box');
   let family;
@@ -264,6 +266,7 @@ function render() {
   const index = Math.min(state.solutionIndex, solutions.length - 1);
   const solution = solutions[index];
   lastEllipse = solution.ellipse;
+  lastSolution = solution;
 
   drawEllipseOverlay(solution.ellipse);
   drawArc(family, solution.ellipse);
@@ -683,11 +686,95 @@ document.getElementById('t1-deg').addEventListener('change', (e) => {
   commitHistory();
 });
 
+// ---------------------------------------------------------------------------
+// Fifth-constraint continuity: switching modes keeps the same ellipse
+// ---------------------------------------------------------------------------
+// When the user switches to a different fifth-constraint mode, we don't hold
+// the raw control value constant (rx and a ratio aren't comparable). Instead we
+// set the new mode's value to whatever reproduces the currently displayed
+// ellipse, so the shape doesn't jump. "Roundest" is the exception: it has no
+// value to carry and deliberately overrides the current ellipse.
+
+/** Midpoint (by parametric angle) of the small arc of `e` between `p0` and `p1`. */
+function smallArcMidpoint(e, p0, p1) {
+  const phi0 = ellipseParam(e, p0);
+  const phi1 = ellipseParam(e, p1);
+  const delta = wrapAngle(phi1 - phi0); // shortest signed sweep, |delta| <= PI
+  return ellipsePoint(e, phi0 + delta / 2);
+}
+
+/**
+ * Set the new mode's control value so solving it reproduces `prev` (the
+ * currently displayed solution). Also picks the matching solution index for
+ * modes that can yield two members with the same value.
+ */
+function applyModeContinuity(mode, prev) {
+  const e = prev.ellipse;
+  switch (mode) {
+    case 'apex':
+      if (typeof prev.a === 'number') state.param = prev.a;
+      break;
+    case 'rotation':
+      state.param = e.thetaDeg;
+      break;
+    case 'ratio':
+      state.param = e.rx / e.ry;
+      break;
+    case 'rx':
+      state.param = e.rx;
+      break;
+    case 'ry':
+      state.param = e.ry;
+      break;
+    case 'through':
+      state.paramPoint = smallArcMidpoint(e, state.p0, state.p1);
+      break;
+    default:
+      break;
+  }
+  // ratio/rx/ry can produce two ellipses for one value; select the one whose
+  // family position (apex `a`) matches the previous ellipse so it stays put.
+  if (typeof prev.a === 'number') {
+    let family;
+    try {
+      family = buildFamily();
+    } catch {
+      return;
+    }
+    let sols;
+    try {
+      sols = currentSolutions(family).filter((s) => s.ellipse);
+    } catch {
+      return;
+    }
+    if (sols.length <= 1) return;
+    let bestIdx = 0;
+    let bestD = Infinity;
+    sols.forEach((sol, i) => {
+      const d = Math.abs((sol.a ?? 0) - prev.a);
+      if (d < bestD) {
+        bestD = d;
+        bestIdx = i;
+      }
+    });
+    state.solutionIndex = bestIdx;
+  }
+}
+
 document.getElementById('mode-buttons').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
+  const prevMode = state.mode;
+  const prev = lastSolution;
   state.mode = btn.dataset.mode;
   state.solutionIndex = 0;
+  // Carry the current ellipse across the switch. Skipped for "roundest" (which
+  // intentionally overrides) and when there's no ellipse to carry or the mode
+  // didn't actually change.
+  if (prev && prev.ellipse && state.mode !== 'roundest' && state.mode !== prevMode) {
+    applyModeContinuity(state.mode, prev);
+  }
+  // Safety net: apex needs a value in (0, 0.5); fall back if we couldn't derive one.
   if (state.mode === 'apex' && (typeof state.param !== 'number' || state.param <= 0 || state.param >= 0.5)) {
     state.param = 0.3;
   }
