@@ -60,6 +60,9 @@ Not every angle/ratio/radius is achievable for a given pair of points and
 tangents — the family might only produce hyperbolas at that particular value.
 Values that don't correspond to an ellipse raise an error rather than guessing.
 
+For the full derivation — the bitangent pencil, the conic-to-ellipse conversion,
+and the algebra behind each mode — see [**MATH.md**](MATH.md).
+
 ## Coordinate and angle conventions
 
 - Points are `{x, y}`. Tangents accept a bare slope number (`dy/dx`,

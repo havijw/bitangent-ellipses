@@ -32,6 +32,7 @@ ui.js            the orchestrator: owns state + view, runs the render/solve
 index.html       the UI's page shell; carries a `<link rel="modulepreload">`
                  for every module in the graph — keep it in sync with src/
 serve.js         ~20-line static file server (browsers block ES imports over file://)
+MATH.md          standalone derivation of the solver math (linked from README)
 scripts/smoke.mjs  headless-browser smoke test (opt-in; not run by `node --test`)
 test/            node:test suites (everything here IS auto-run by `node --test`)
 ```
