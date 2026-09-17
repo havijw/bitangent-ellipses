@@ -52,7 +52,7 @@ export function drawStaticGeometry(group, state, family, view, sizeScale) {
   const t1 = clipLineToView(state.p1, family.d1, view);
   if (t1) group.appendChild(line(t1[0], t1[1], '#f87171', '2 4'));
   if (state.mode === 'through') {
-    group.appendChild(el('circle', { cx: state.paramPoint.x, cy: state.paramPoint.y, r: 5 * sizeScale, fill: '#facc15' }));
+    group.appendChild(el('circle', { cx: state.paramPoint.x, cy: state.paramPoint.y, r: 7 * sizeScale, fill: '#facc15' }));
   }
 }
 
@@ -62,7 +62,7 @@ export function drawEllipseOverlay(group, ellipse, sizeScale) {
   const pts = ellipsePolyline(ellipse, 180);
   const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(3)} ${p.y.toFixed(3)}`).join(' ') + ' Z';
   group.appendChild(el('path', { d, fill: 'none', stroke: '#64748b', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }));
-  group.appendChild(el('circle', { cx: ellipse.cx, cy: ellipse.cy, r: 2.5 * sizeScale, fill: '#64748b' }));
+  group.appendChild(el('circle', { cx: ellipse.cx, cy: ellipse.cy, r: 3 * sizeScale, fill: '#64748b' }));
 }
 
 /** The solid arc overlay, drawn from the already-chosen `arc` (y-down canvas). */
@@ -83,11 +83,11 @@ export function drawHandles(group, state, sizeScale, handleLen) {
   group.appendChild(stalk(state.p0, h0, '#22c55e'));
   group.appendChild(stalk(state.p1, h1, '#f87171'));
 
-  group.appendChild(makeDraggable('p0', state.p0, 8, '#22c55e', sizeScale));
-  group.appendChild(makeDraggable('p1', state.p1, 8, '#f87171', sizeScale));
-  group.appendChild(makeArrowHandle('h0', h0, state.t0Deg, 9, '#22c55e', sizeScale));
-  group.appendChild(makeArrowHandle('h1', h1, state.t1Deg, 9, '#f87171', sizeScale));
+  group.appendChild(makeDraggable('p0', state.p0, 10, '#22c55e', sizeScale));
+  group.appendChild(makeDraggable('p1', state.p1, 10, '#f87171', sizeScale));
+  group.appendChild(makeArrowHandle('h0', h0, state.t0Deg, 12, '#22c55e', sizeScale));
+  group.appendChild(makeArrowHandle('h1', h1, state.t1Deg, 12, '#f87171', sizeScale));
   if (state.mode === 'through') {
-    group.appendChild(makeDraggable('through', state.paramPoint, 6, '#facc15', sizeScale));
+    group.appendChild(makeDraggable('through', state.paramPoint, 8, '#facc15', sizeScale));
   }
 }
