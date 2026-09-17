@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Two-tangent ellipse</title>
 <!-- Preload the whole ES-module graph so the browser fetches it in parallel
      instead of discovering each import one wave at a time (a latency
@@ -322,57 +321,6 @@
     font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer;
   }
   #solution-next:hover { text-decoration: underline; }
-  /* --- panel expand/collapse toggle (only shown in the small-screen layout) --- */
-  .panel-toggle {
-    display: none;
-    width: 100%;
-    margin: 0 0 2px;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    line-height: 1;
-    cursor: pointer;
-  }
-  .panel-toggle-caret {
-    display: inline-block;
-    font-size: 13px;
-    /* Stretch the caret horizontally so it reads as a wide, light arrow. */
-    transform: scaleX(2.4);
-  }
-  .panel-toggle:hover { color: var(--text); }
-  /* --- small screens: stack the sidebar under the canvas as a bottom sheet,
-         collapsed to the fifth-constraint controls with an expand toggle --- */
-  @media (max-width: 768px) {
-    body { flex-direction: column; }
-    #canvas-wrap { flex: 1 1 auto; min-height: 0; }
-    #sidebar {
-      width: 100%;
-      flex: 0 0 auto;
-      border-left: none;
-      border-top: 1px solid var(--panel-border);
-      max-height: 55vh;
-      padding: 6px 16px 12px;
-    }
-    .panel-toggle { display: block; }
-    /* Collapsed (default): show only the fifth-constraint (mode) controls. */
-    #sidebar > h1,
-    #sidebar > p.hint,
-    #sec-points,
-    #sec-result,
-    #sec-export { display: none; }
-    /* Expanded: reveal the whole panel and let it scroll. */
-    body.panel-expanded #sidebar { max-height: 72vh; overflow-y: auto; }
-    body.panel-expanded #sidebar > h1,
-    body.panel-expanded #sidebar > p.hint,
-    body.panel-expanded #sec-points,
-    body.panel-expanded #sec-result,
-    body.panel-expanded #sec-export { display: block; }
-    /* Canvas overlays: hide the pan/zoom hint, stack the control clusters. */
-    #zoom-hint { display: none; }
-    #zoom-controls { flex-direction: column; }
-    #history-controls { flex-direction: column; }
-  }
 </style>
 </head>
 <body>
@@ -391,14 +339,12 @@
     <div id="zoom-hint">Scroll to zoom &middot; drag canvas to pan</div>
   </div>
   <div id="sidebar">
-    <button type="button" id="panel-toggle" class="panel-toggle" aria-expanded="false" aria-label="Show all controls"><span class="panel-toggle-caret">&#8963;</span></button>
     <h1>Ellipse from two tangents</h1>
     <p class="hint">
       Drag the <span class="dot dot-p0"></span>green and <span class="dot dot-p1"></span>red
       points and their tangent arrows on the canvas &mdash; or type exact values below.
     </p>
 
-    <section id="sec-points">
     <h2>Points &amp; tangents</h2>
     <div class="row">
       <div class="field"><label><span class="dot dot-p0"></span>P0 (x, y)</label><input type="text" id="p0-xy" /></div>
@@ -408,9 +354,7 @@
       <div class="field"><label><span class="dot dot-p1"></span>P1 (x, y)</label><input type="text" id="p1-xy" /></div>
       <div class="field"><label>Tangent at P1 (deg)</label><input type="text" id="t1-deg" /></div>
     </div>
-    </section>
 
-    <section id="sec-pick">
     <h2 class="section-head">
       Pick the ellipse
       <button type="button" id="help-btn" class="help-btn" aria-haspopup="dialog" title="How each mode picks an ellipse">?</button>
@@ -458,15 +402,11 @@
       <label>Third point (x, y)</label>
       <input type="text" id="through-xy" />
     </div>
-    </section>
 
-    <section id="sec-result">
     <h2>Result</h2>
     <div id="error-box" class="error-box" style="display:none"></div>
     <div class="results" id="results"></div>
-    </section>
 
-    <section id="sec-export">
     <h2>SVG export</h2>
     <div class="toggle-row">
       <input type="checkbox" id="yup-toggle" />
@@ -488,7 +428,6 @@
     </div>
 
     <button id="reset-btn">Reset to defaults</button>
-    </section>
   </div>
 
   <dialog id="help-dialog" aria-labelledby="help-title">

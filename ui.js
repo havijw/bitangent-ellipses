@@ -43,11 +43,7 @@ import { drawGrid, drawStaticGeometry, drawEllipseOverlay, drawArcOverlay, drawH
 import { renderResults, renderSolutionCycler, renderExports, syncControlsFromState } from './src/ui/panels.js';
 
 const svg = document.getElementById('canvas');
-const HANDLE_LEN = 90;
-
-// Larger hit targets on touch / coarse-pointer devices, where big drag targets
-// are strongly preferred; 1 on precise (mouse) pointers.
-const uiSizeMult = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 1.5 : 1;
+const HANDLE_LEN = 70;
 
 // The visible window into world space, as an SVG viewBox. Panning shifts x/y;
 // zooming scales w/h about the cursor. It is deliberately kept out of `state`
@@ -55,10 +51,8 @@ const uiSizeMult = typeof matchMedia === 'function' && matchMedia('(pointer: coa
 // whatever zoom the author happened to leave it at.
 let view = { ...DEFAULT_VIEW };
 
-// World units per screen pixel (times the touch-target multiplier). Multiplying
-// a pixel size by this gives the world-space size that renders at a constant
-// physical size — regardless of zoom *or* how large the canvas element is, so
-// handles never shrink as the canvas narrows on small screens.
+// World units per default unit; used to keep point/handle sizes and the
+// tangent-handle offset constant on screen regardless of zoom.
 let sizeScale = 1;
 
 // The most recently solved ellipse, or null when the inputs have no ellipse.
@@ -68,8 +62,7 @@ let lastSolution = null; // full solution object of the displayed ellipse (carri
 
 function applyView() {
   svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-  const px = (canvasPixels && canvasPixels.w) || svg.getBoundingClientRect().width || VIEW_W;
-  sizeScale = (view.w / px) * uiSizeMult;
+  sizeScale = view.w / VIEW_W;
 }
 
 /** Zoom by `factor` (>1 zooms out) about a fixed screen fraction (fx, fy) in [0,1]. */
@@ -480,21 +473,6 @@ if (helpDialog && helpBtn) {
   });
 }
 
-// Small-screen bottom-sheet expand/collapse. Collapsed shows only the
-// fifth-constraint controls; expanded reveals the full panel. The button is
-// hidden by CSS on wide layouts, where the whole sidebar is always visible.
-const panelToggle = document.getElementById('panel-toggle');
-if (panelToggle) {
-  const panelCaret = panelToggle.querySelector('.panel-toggle-caret');
-  panelToggle.addEventListener('click', () => {
-    const expanded = document.body.classList.toggle('panel-expanded');
-    panelToggle.setAttribute('aria-expanded', String(expanded));
-    // Chevron points up to expand (the sheet grows upward), down to collapse.
-    if (panelCaret) panelCaret.textContent = expanded ? '⌄' : '⌃';
-    panelToggle.setAttribute('aria-label', expanded ? 'Show fewer controls' : 'Show all controls');
-  });
-}
-
 document.getElementById('reset-btn').addEventListener('click', () => {
   state = defaultState();
   render(); // solve the defaults so fitToContent has geometry to frame
@@ -520,45 +498,8 @@ function svgPoint(evt) {
 
 let dragging = null; // a handle id while dragging a point/handle
 let panning = null; // { sx, sy, vx, vy } while panning the canvas
-// Live touch/mouse pointers on the canvas, keyed by pointerId. Two at once is a
-// pinch-zoom gesture (trackpad pinch already arrives as a ctrl+wheel event and
-// is handled below; this covers genuine multi-touch on phones/tablets).
-const activePointers = new Map(); // pointerId -> { x, y }
-let pinchDist = null; // finger separation on the previous pinch frame, in px
-
-/** The two live pointers as [a, b]; only valid while `activePointers.size >= 2`. */
-function twoPointers() {
-  const it = activePointers.values();
-  return [it.next().value, it.next().value];
-}
-function pinchSeparation() {
-  const [a, b] = twoPointers();
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-/** Screen-relative fraction [0,1] of the midpoint between the two pinch fingers. */
-function pinchMidpointFraction() {
-  const [a, b] = twoPointers();
-  const rect = svg.getBoundingClientRect();
-  return {
-    fx: ((a.x + b.x) / 2 - rect.left) / rect.width,
-    fy: ((a.y + b.y) / 2 - rect.top) / rect.height,
-  };
-}
 
 svg.addEventListener('pointerdown', (e) => {
-  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-  // A second finger turns any single-pointer drag/pan into a pinch-zoom.
-  if (activePointers.size === 2) {
-    dragging = null;
-    panning = null;
-    svg.classList.remove('dragging');
-    svg.setPointerCapture(e.pointerId);
-    pinchDist = pinchSeparation();
-    return;
-  }
-  if (activePointers.size > 2) return;
-
   const handle = e.target.dataset?.handle;
   if (handle) {
     dragging = handle;
@@ -573,20 +514,6 @@ svg.addEventListener('pointerdown', (e) => {
 });
 
 svg.addEventListener('pointermove', (e) => {
-  if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-  if (pinchDist !== null && activePointers.size >= 2) {
-    const dist = pinchSeparation();
-    // Fingers spreading (dist grows) zooms in; zoomAbout's factor > 1 zooms out,
-    // so the ratio is prev/current. Anchor on the midpoint between the fingers.
-    if (dist > 0 && pinchDist > 0) {
-      const { fx, fy } = pinchMidpointFraction();
-      zoomAbout(pinchDist / dist, fx, fy);
-    }
-    pinchDist = dist;
-    return;
-  }
-
   if (dragging) {
     const p = svgPoint(e);
     if (dragging === 'p0') state.p0 = p;
@@ -605,11 +532,7 @@ svg.addEventListener('pointermove', (e) => {
   }
 });
 
-function endPointer(e) {
-  activePointers.delete(e.pointerId);
-  // End the pinch once fewer than two fingers remain; don't resume a pan with
-  // the leftover finger (it would jump), so clear the single-pointer state too.
-  if (pinchDist !== null && activePointers.size < 2) pinchDist = null;
+function endPointer() {
   const wasDragging = dragging !== null;
   dragging = null;
   panning = null;
