@@ -38,7 +38,7 @@ import {
   pointInView,
   History,
 } from './src/state.js';
-import { el, autoSizeTextarea } from './src/ui/dom.js';
+import { el } from './src/ui/dom.js';
 import { drawGrid, drawStaticGeometry, drawEllipseOverlay, drawArcOverlay, drawHandles } from './src/ui/scene.js';
 import { renderResults, renderSolutionCycler, renderExports, syncControlsFromState } from './src/ui/panels.js';
 
@@ -443,17 +443,6 @@ document.getElementById('yup-toggle').addEventListener('change', (e) => {
   state.yUp = e.target.checked;
   render();
 });
-
-// The SVG-export section is collapsible. A textarea sized while its <details>
-// is closed measures a zero scrollHeight, so re-fit both boxes when it reopens.
-const exportDetails = document.getElementById('export-details');
-if (exportDetails) {
-  exportDetails.addEventListener('toggle', () => {
-    if (!exportDetails.open) return;
-    autoSizeTextarea(document.getElementById('export-path'));
-    autoSizeTextarea(document.getElementById('export-arc-param'));
-  });
-}
 
 document.getElementById('arc-toggle').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
