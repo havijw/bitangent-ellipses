@@ -25,11 +25,8 @@ export const MODE_META = {
   through: { label: 'Drag the yellow point on the canvas', kind: 'none' },
 };
 
-/**
- * Fill the results panel. `onCycle(nextIndex)` is invoked when the user clicks
- * "Next" on a multi-solution result (ratio/rx/ry can yield two ellipses).
- */
-export function renderResults(state, solutions, index, onCycle) {
+/** Fill the results panel with the solved ellipse's parameters. */
+export function renderResults(state, solutions, index) {
   const box = document.getElementById('results');
   if (solutions.length === 0) {
     box.innerHTML = '<div class="result-row"><span class="label">No solution</span></div>';
@@ -42,10 +39,28 @@ export function renderResults(state, solutions, index, onCycle) {
         `<div class="result-row${i < 3 ? ' big' : ''}"><span class="label">${label}</span><span class="value">${value}</span></div>`,
     )
     .join('');
-  if (solutions.length > 1) {
-    box.innerHTML += `<div class="result-row"><span class="label">Solution ${index + 1} of ${solutions.length}</span><button class="copy-btn" id="cycle-solution">Next</button></div>`;
-    document.getElementById('cycle-solution').addEventListener('click', () => onCycle((index + 1) % solutions.length));
+}
+
+/**
+ * Show or hide the solution cycler sitting beside the parameter control. The
+ * value modes (aspect ratio, rx, ry) can yield two ellipses for one value, so
+ * this surfaces "Solution i of n" and a Next button right where the value was
+ * entered — far more discoverable than tucked in the results card. Hidden
+ * entirely for single-solution results; `onCycle(nextIndex)` re-solves.
+ */
+export function renderSolutionCycler(solutions, index, onCycle) {
+  const box = document.getElementById('solution-cycler');
+  if (!box) return;
+  if (!solutions || solutions.length <= 1) {
+    box.style.display = 'none';
+    return;
   }
+  box.style.display = 'flex';
+  document.getElementById('solution-status').textContent =
+    `Solution ${index + 1} of ${solutions.length}`;
+  // Reassign rather than addEventListener so repeated renders don't stack handlers.
+  document.getElementById('solution-next').onclick = () =>
+    onCycle((index + 1) % solutions.length);
 }
 
 /**

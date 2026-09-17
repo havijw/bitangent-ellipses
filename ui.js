@@ -12,7 +12,7 @@
  * coordinate convention, and all solving happens directly in those same
  * coordinates — so the dashed "full ellipse" polyline and the solid arc path
  * drawn on top of it are produced by the exact same math the SVG export uses,
- * with `yUp: false`. That overlay coinciding pixel-for-pixel is the tool's own
+ * with `yUp: false`. That overlay coinciding pixel-for-pixel is the built-in
  * correctness check. The "Y-axis points up" toggle only affects the text in
  * the export boxes, for pasting into a renderer that uses the opposite
  * convention; it does not change what's drawn here.
@@ -40,7 +40,7 @@ import {
 } from './src/state.js';
 import { el, autoSizeTextarea } from './src/ui/dom.js';
 import { drawGrid, drawStaticGeometry, drawEllipseOverlay, drawArcOverlay, drawHandles } from './src/ui/scene.js';
-import { renderResults, renderExports, syncControlsFromState } from './src/ui/panels.js';
+import { renderResults, renderSolutionCycler, renderExports, syncControlsFromState } from './src/ui/panels.js';
 
 const svg = document.getElementById('canvas');
 const HANDLE_LEN = 70;
@@ -197,7 +197,8 @@ function render() {
     drawStaticGeometry(staticGroup, state, null, view, sizeScale);
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
-    renderResults(state, [], 0, onCycleSolution);
+    renderResults(state, [], 0);
+    renderSolutionCycler([], 0, onCycleSolution);
     renderExports(state, null, null);
     drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
     return;
@@ -215,7 +216,8 @@ function render() {
     showError(err);
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
-    renderResults(state, [], 0, onCycleSolution);
+    renderResults(state, [], 0);
+    renderSolutionCycler([], 0, onCycleSolution);
     renderExports(state, family, null);
     drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
     return;
@@ -230,7 +232,8 @@ function render() {
     showError({ message: note });
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
-    renderResults(state, [], 0, onCycleSolution);
+    renderResults(state, [], 0);
+    renderSolutionCycler([], 0, onCycleSolution);
     renderExports(state, family, null);
     drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
     return;
@@ -247,7 +250,8 @@ function render() {
   const canvasArc = pickArc(family, solution.ellipse, false);
   const exportArc = pickArc(family, solution.ellipse, state.yUp);
   drawArcOverlay(arcGroup, family, solution.ellipse, canvasArc);
-  renderResults(state, solutions, index, onCycleSolution);
+  renderResults(state, solutions, index);
+  renderSolutionCycler(solutions, index, onCycleSolution);
   renderExports(state, family, solution.ellipse, exportArc, canvasArc);
   drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
 }
@@ -467,6 +471,18 @@ document.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
     setTimeout(() => (btn.textContent = original), 900);
   });
 });
+
+// Mode help modal. The native <dialog> handles the backdrop, Esc-to-close, and
+// focus trapping; the close button submits its `method="dialog"` form. We only
+// wire the opener and a click-outside-to-close.
+const helpDialog = document.getElementById('help-dialog');
+const helpBtn = document.getElementById('help-btn');
+if (helpDialog && helpBtn) {
+  helpBtn.addEventListener('click', () => helpDialog.showModal());
+  helpDialog.addEventListener('click', (e) => {
+    if (e.target === helpDialog) helpDialog.close();
+  });
+}
 
 document.getElementById('reset-btn').addEventListener('click', () => {
   state = defaultState();

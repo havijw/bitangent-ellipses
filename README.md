@@ -32,7 +32,7 @@ ellipse-tool/
 Two points plus two tangent directions is **4 constraints**. A general
 ellipse has **5 degrees of freedom** (center x, center y, rx, ry, rotation).
 So there's a whole one-parameter *family* of ellipses satisfying the input,
-not a single answer — the tool needs a fifth constraint to pick one.
+not a single answer — a fifth constraint is needed to pick one.
 
 The family has a clean closed form. Write each tangent line as a linear form
 `L(x, y) = 0`, and the chord through the two points as `M(x, y) = 0`. Then
@@ -58,7 +58,7 @@ represents exactly this pencil and offers several ways to pick a member:
 
 Not every angle/ratio/radius is achievable for a given pair of points and
 tangents — the family might only produce hyperbolas at that particular value.
-When that happens, the tool says so rather than guessing.
+Values that don't correspond to an ellipse raise an error rather than guessing.
 
 ## Coordinate and angle conventions
 
@@ -81,7 +81,8 @@ node serve.js            # http://localhost:8765 (set PORT to use another)
 ```
 
 Drag the two points and their tangent handles directly on the canvas; pick a
-fifth-constraint mode in the sidebar. The dashed curve is the full analytic
+fifth-constraint mode in the sidebar (the "?" next to "Pick the ellipse" opens
+a reference explaining what each mode does). The dashed curve is the full analytic
 ellipse and the solid arc is the same shape built independently through the
 SVG path math — if they don't coincide exactly, something's wrong. The
 sidebar's export boxes give the arc two ways: as an ARC path parameter object

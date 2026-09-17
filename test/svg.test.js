@@ -191,7 +191,7 @@ test('yUp flips the reported sweep relative to the y-down (SVG) convention', () 
 });
 
 test('exported arc lies on the analytic ellipse for every solver mode', () => {
-  // The tool's core self-check: the SVG arc drawn from the exported path and
+  // The core self-check: the SVG arc drawn from the exported path and
   // the analytic ellipse the solver computed must be the same curve. Here we
   // reconstruct the arc's ellipse purely from the path string and verify every
   // sampled point satisfies the analytic conic, across each fifth-constraint

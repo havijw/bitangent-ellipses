@@ -236,7 +236,51 @@ async function main() {
   assert(!afterCycle.error, `back on "roundest" solves without error (got: ${afterCycle.error})`);
   assert(/^M\s/.test(afterCycle.path), 'roundest re-exports a well-formed path after cycling modes');
 
-  console.log('PASS: page boots, solves, exports a well-formed arc, and cycles all modes.');
+  // 7. The mode-help modal opens on the "?" button and closes again. Guards the
+  // <dialog> wiring (showModal / click-outside-to-close) added with the help copy.
+  await cdp.evalValue(`document.getElementById('help-btn').click(); true`);
+  await sleep(30);
+  assert(!pageError, `opening help throws no page exception (got: ${pageError})`);
+  const helpOpened = await cdp.evalValue(`document.getElementById('help-dialog').open === true`);
+  assert(helpOpened, 'help button opens the modal dialog');
+  const hasModeCopy = await cdp.evalValue(
+    `document.querySelectorAll('#help-dialog .help-modes dt').length >= 6`,
+  );
+  assert(hasModeCopy, 'help dialog lists the modes');
+  await cdp.evalValue(`document.getElementById('help-dialog').close(); true`);
+  await sleep(30);
+  const helpClosed = await cdp.evalValue(`document.getElementById('help-dialog').open === false`);
+  assert(helpClosed, 'help dialog closes');
+
+  // 8. The solution cycler shows up beside the value control when one value maps
+  // to two ellipses (a symmetric family at aspect ratio 2), and Next switches
+  // between them. Guards that the cycler moved out of the results card correctly.
+  await cdp.evalValue(`(() => {
+    const set = (id, v) => {
+      const el = document.getElementById(id);
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    set('p0-xy', '220, 320'); set('p1-xy', '580, 320');
+    set('t0-deg', '-55'); set('t1-deg', '-125');
+    document.querySelector('#mode-buttons button[data-mode="ratio"]').click();
+    set('param-text', '2');
+    return true;
+  })()`);
+  await sleep(40);
+  assert(!pageError, `two-solution setup throws no page exception (got: ${pageError})`);
+  const cyclerShown = await cdp.evalValue(
+    `getComputedStyle(document.getElementById('solution-cycler')).display !== 'none'`,
+  );
+  assert(cyclerShown, 'solution cycler appears when a value yields two ellipses');
+  const beforeNext = await cdp.evalValue(`document.getElementById('results').textContent`);
+  await cdp.evalValue(`document.getElementById('solution-next').click(); true`);
+  await sleep(40);
+  const afterNext = await cdp.evalValue(`document.getElementById('results').textContent`);
+  assert(beforeNext !== afterNext, 'Next switches to the other solution');
+
+  console.log('PASS: page boots, solves, exports a well-formed arc, cycles all modes, opens mode help, and cycles multi-solutions.');
   console.log(`  path:     ${snapshot.path}`);
   console.log(`  ARC type: ${arc.type} ${arc.direction} ${arc.arc_size}`);
   finish(0);
