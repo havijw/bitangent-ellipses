@@ -236,7 +236,7 @@ Diagonalize the symmetric matrix $\mathbf{M}_2$. Its eigenvalues are
 
 $$
 \lambda_\pm = \frac{A + C \pm R}{2},
-\qquad R = \sqrt{(A - C)^2 + B^2} = \operatorname{hypot}(A - C,\, B),
+\qquad R = \sqrt{(A - C)^2 + B^2} = \mathrm{hypot}(A - C,\, B),
 $$
 
 matching `lHigh`/`lLow` with `R = Math.hypot(A - C, B)`. In the eigenbasis
@@ -256,11 +256,11 @@ imaginary or degenerate).
 The orientation is the eigenvector angle of $\mathbf{M}_2$. For a symmetric
 $\left(\begin{smallmatrix} A & B/2 \\ B/2 & C\end{smallmatrix}\right)$ the principal angle
 satisfies $\tan 2\varphi = \dfrac{B}{A - C}$, so the axis of $\lambda_{\max}$ points
-at $\varphi = \tfrac12 \operatorname{atan2}(B,\, A - C)$. The major axis ($r_x$)
+at $\varphi = \tfrac12 \mathrm{atan2}(B,\, A - C)$. The major axis ($r_x$)
 is perpendicular to it, hence
 
 $$
-\theta = \tfrac12 \operatorname{atan2}(B,\, A - C) + \tfrac{\pi}{2}.
+\theta = \tfrac12 \mathrm{atan2}(B,\, A - C) + \tfrac{\pi}{2}.
 $$
 
 To keep the invariant "$r_x$ is the semi-major radius and $\theta$ points along
@@ -383,7 +383,7 @@ $a \in (0, \tfrac12)$ slider across both cases, $b$ is tied to $a$ by the
 increasing bijection
 
 $$
-b = \operatorname{halfChord}\cdot \frac{a}{\tfrac12 - a},
+b = \mathrm{halfChord}\cdot \frac{a}{\tfrac12 - a},
 $$
 
 so $a \to 0$ gives $b \to 0$ (collapse onto the chord) and $a \to \tfrac12$ gives
@@ -507,7 +507,7 @@ matter:
   $\lvert P_0P_1 \rvert \le 2 r_x$, i.e.
 
 $$
-r_x \ge \tfrac12\lvert P_0 P_1\rvert = \operatorname{halfChord}.
+r_x \ge \tfrac12\lvert P_0 P_1\rvert = \mathrm{halfChord}.
 $$
 
 Requests below this are rejected up front with an explanatory error.
