@@ -27,14 +27,21 @@ export const FIT_PAD = 0.12;
 
 export const DEFAULT_VIEW = { x: 0, y: 0, w: VIEW_W, h: VIEW_H };
 
+// A circle makes a friendly, non-arbitrary landing state: the origin-centered
+// circle of radius 25. p0 sits directly below the center with a horizontal
+// tangent and p1 directly to its right with a vertical tangent, so the two
+// perpendicular tangents are consistent with the circle through both points.
+// Roundest then recovers rx = ry (a built-in sanity check), and the small arc
+// between them is a clean quarter circle. The view auto-fits on load, so the
+// small world coordinates are framed regardless.
 export const DEFAULT_STATE = {
-  p0: { x: 160, y: 380 },
-  p1: { x: 560, y: 220 },
-  t0Deg: -35,
-  t1Deg: 20,
+  p0: { x: 0, y: 25 },
+  p1: { x: 25, y: 0 },
+  t0Deg: 0,
+  t1Deg: 90,
   mode: 'roundest',
   param: 0.3,
-  paramPoint: { x: 380, y: 420 },
+  paramPoint: { x: 18, y: 18 }, // ~45deg along the same circle, for third-point mode
   yUp: false,
   arcChoice: null, // 'small' | 'large' | null (null = follow the signed tangent)
   solutionIndex: 0,
