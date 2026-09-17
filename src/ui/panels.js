@@ -39,7 +39,7 @@ export function renderResults(state, solutions, index, onCycle) {
   box.innerHTML = rows
     .map(
       ([label, value], i) =>
-        `<div class="result-row${i < 2 ? ' big' : ''}"><span class="label">${label}</span><span class="value">${value}</span></div>`,
+        `<div class="result-row${i < 3 ? ' big' : ''}"><span class="label">${label}</span><span class="value">${value}</span></div>`,
     )
     .join('');
   if (solutions.length > 1) {
