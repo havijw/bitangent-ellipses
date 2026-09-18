@@ -658,9 +658,20 @@ export function familySolutions(family, mode, param) {
     case "roundest":
       candidates = [family.roundest()];
       break;
-    case "apex":
-      candidates = [family.atApex(Number(param))];
+    case "apex": {
+      const a = Number(param);
+      // `atApex` maps the whole pencil, so a >= 1/2 is a legal query that
+      // simply lands on the parabola or past it onto a hyperbola. Callers
+      // asking for an *ellipse* get a filtered-out empty result there, so
+      // name the boundary instead of reporting a bare "no ellipse".
+      if (!(a > 0 && a < A_LIMIT)) {
+        throw new EllipseInputError(
+          `Apex position must be between 0 and ${A_LIMIT} (exclusive); ${A_LIMIT} is the parabola, and beyond it the conic is a hyperbola.`,
+        );
+      }
+      candidates = [family.atApex(a)];
       break;
+    }
     case "rotation":
       candidates = [family.withRotation(Number(param))];
       break;

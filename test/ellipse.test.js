@@ -139,6 +139,37 @@ test('withRadius(rx, value) returns ellipses with that semi-major radius', () =>
   }
 });
 
+// `rx` is the mode with the extra half-chord guard, so it got the coverage;
+// `ry` goes through the same bracketed search with none of that screening and
+// is the end where the ellipse degenerates (ry -> 0) and the radius is worst
+// conditioned — exactly what the withRadius validation guard exists to catch.
+test('withRadius(ry, value) returns ellipses with that semi-minor radius', () => {
+  const family = new EllipseFamily({ x: 0, y: 0 }, { deg: 20 }, { x: 90, y: 10 }, { deg: 210 });
+  for (const target of [5, 20, 35]) {
+    const solutions = family.withRadius('ry', target);
+    assert.ok(solutions.length >= 1, `expected at least one solution for ry = ${target}`);
+    for (const s of solutions) {
+      assert.ok(
+        Math.abs(s.ellipse.ry - target) < 1e-4,
+        `ry = ${s.ellipse.ry}, wanted ${target}`,
+      );
+      assert.ok(s.ellipse.rx >= s.ellipse.ry, 'rx must stay the semi-major radius');
+      assertSatisfiesConstraints(family, s, 1e-4);
+    }
+  }
+});
+
+// The guard that rejects a bracket converging on a pole or on numerical noise
+// rather than a real crossing: whatever comes back must actually hit the value.
+test('withRadius returns nothing rather than a near-miss for an unreachable radius', () => {
+  const family = new EllipseFamily({ x: 0, y: 0 }, { deg: 20 }, { x: 90, y: 10 }, { deg: 210 });
+  const tiny = family.withRadius('rx', family.halfChord * 0.1);
+  assert.equal(tiny.length, 0, 'no ellipse has a semi-major axis that short');
+  for (const s of family.withRadius('ry', 1e-9)) {
+    assert.ok(Math.abs(s.ellipse.ry - 1e-9) < 1e-15, 'accepted solutions must hit the target');
+  }
+});
+
 test('apex = 1/2 is exactly the parabola boundary; beyond it is a hyperbola', () => {
   const family = new EllipseFamily({ x: 0, y: 0 }, { deg: 25 }, { x: 90, y: 15 }, { deg: 200 });
   const atHalf = family.atApex(0.5);
@@ -247,6 +278,45 @@ test('familySolutions rejects an rx shorter than half the chord, and names the b
   );
   // ry has no such lower bound, so the same value must not trip the rx guard.
   assert.doesNotThrow(() => familySolutions(family, 'ry', tooSmall));
+});
+
+test('familySolutions rejects an apex outside (0, 1/2) and names the parabola', () => {
+  const family = defaultFamily();
+  for (const a of [0, 0.5, 0.75, 1, -0.2, NaN]) {
+    assert.throws(
+      () => familySolutions(family, 'apex', a),
+      (err) => err instanceof EllipseInputError && /parabola/.test(err.message),
+      `apex ${a} should be rejected with the parabola boundary named`,
+    );
+  }
+  assert.doesNotThrow(() => familySolutions(family, 'apex', 0.25));
+});
+
+// The UI reports "no ellipse — got a <kind> instead" from this channel. It only
+// works if the discarded candidate is actually handed back alongside the (empty)
+// solutions list, rather than silently dropped.
+test('familySolutions reports the non-ellipse candidate it rejected', () => {
+  const family = defaultFamily();
+  // An aspect ratio below the family's achievable minimum has no solution at
+  // all: nothing is returned, and nothing was rejected either.
+  const impossible = familySolutions(family, 'ratio', 1.0000001);
+  assert.equal(impossible.solutions.length + impossible.rejected.length, 0);
+
+  // A rotation the family can only meet with a non-ellipse yields exactly one
+  // candidate, carried in `rejected` with its kind named.
+  let found = null;
+  for (let deg = 0; deg < 180 && !found; deg += 0.5) {
+    const r = familySolutions(family, 'rotation', deg);
+    if (r.solutions.length === 0 && r.rejected.length > 0) found = r;
+  }
+  assert.ok(found, 'expected some rotation angle with no real ellipse');
+  assert.equal(found.solutions.length, 0);
+  assert.equal(found.rejected.length, 1);
+  assert.ok(
+    ['parabola', 'hyperbola', 'degenerate', 'imaginary'].includes(found.rejected[0].kind),
+    `rejected candidate should name its kind, got ${found.rejected[0].kind}`,
+  );
+  assert.equal(found.rejected[0].ellipse, null);
 });
 
 test('familySolutions matches solveEllipse for the un-guarded modes', () => {

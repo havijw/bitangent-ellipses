@@ -18,7 +18,7 @@
  * convention; it does not change what's drawn here.
  */
 
-import { EllipseFamily, EllipseInputError, familySolutions, continuityParam, matchSolutionIndex } from './src/ellipse.js';
+import { EllipseFamily, familySolutions, continuityParam, matchSolutionIndex } from './src/ellipse.js';
 import { chooseArc } from './src/svg.js';
 import {
   VIEW_W,
@@ -138,12 +138,19 @@ function buildFamily() {
   return new EllipseFamily(state.p0, { deg: state.t0Deg }, state.p1, { deg: state.t1Deg });
 }
 
+/**
+ * Solve the current mode, returning `{ solutions, rejected }` — the real
+ * ellipses, and the non-ellipse candidates the constraint produced instead.
+ * `rejected` is what lets the error message name the shape actually hit ("got
+ * a parabola instead") rather than a bare "no ellipse", so it has to be
+ * carried through here rather than dropped.
+ */
 function currentSolutions(family) {
   // The mode dispatch and its guards live in ellipse.js so this and the
   // headless solveEllipse entry point can never diverge. 'through' takes the
   // third point; every other mode takes the numeric slider/field value.
   const param = state.mode === 'through' ? state.paramPoint : state.param;
-  return familySolutions(family, state.mode, param).solutions;
+  return familySolutions(family, state.mode, param);
 }
 
 /**
@@ -167,7 +174,10 @@ function pickArc(family, ellipse, yUp = false) {
 
 function showError(err) {
   const box = document.getElementById('error-box');
-  box.textContent = err instanceof EllipseInputError || err.message ? err.message : String(err);
+  // Solver problems arrive as EllipseInputError and the "no solution" notes as
+  // plain `{ message }`; anything else is a bug leaking through, so fall back
+  // to its string form rather than showing an empty box.
+  box.textContent = err?.message || String(err);
   box.style.display = 'block';
 }
 
@@ -175,11 +185,10 @@ function showError(err) {
 function onCycleSolution(nextIndex) {
   state.solutionIndex = nextIndex;
   render();
-  commitHistory();
+  commitChange();
 }
 
 function render() {
-  saveState();
   syncControlsFromState(state);
   applyView();
   drawGrid(gridGroup, view);
@@ -209,9 +218,7 @@ function render() {
   let solutions;
   let rejected;
   try {
-    const raw = currentSolutions(family);
-    solutions = raw.filter((s) => s.ellipse);
-    rejected = raw.filter((s) => !s.ellipse);
+    ({ solutions, rejected } = currentSolutions(family));
   } catch (err) {
     showError(err);
     ellipseGroup.innerHTML = '';
@@ -239,7 +246,11 @@ function render() {
     return;
   }
 
-  const index = Math.min(state.solutionIndex, solutions.length - 1);
+  // Clamp at both ends: `solutionIndex` is restored from the URL hash and
+  // localStorage, and a negative one would index past the start of the array
+  // and throw below, outside any try/catch — a blank page. `withDefaults`
+  // screens the restored value too; this is the runtime backstop.
+  const index = Math.min(Math.max(0, state.solutionIndex), solutions.length - 1);
   const solution = solutions[index];
   lastEllipse = solution.ellipse;
   lastSolution = solution;
@@ -266,9 +277,14 @@ function render() {
 // move never quietly flips your export settings.
 //
 // Continuous gestures (dragging a handle, sliding the apex range) fire render
-// on every step but commit a single history entry when the gesture ends, so
-// one drag is one undo — not hundreds. The stack logic itself is the pure
-// History class; this file only supplies snapshots and applies what comes back.
+// on every step but commit a single entry when the gesture ends, so one drag is
+// one undo — not hundreds. Persistence hangs off those same commit points via
+// `commitChange()`, which is why mid-gesture state is never stored: what gets
+// written is exactly what you could undo back to. The two excluded export
+// controls persist on their own, without touching the stack.
+//
+// The stack logic itself is the pure History class; this file only supplies
+// snapshots and applies what comes back.
 
 const TRACKED_KEYS = ['p0', 'p1', 't0Deg', 't1Deg', 'mode', 'param', 'paramPoint', 'solutionIndex'];
 const undoHistory = new History(200);
@@ -290,11 +306,25 @@ function commitHistory() {
   if (undoHistory.commit(trackedSnapshot())) updateHistoryButtons();
 }
 
+/**
+ * A change is finished: record it for undo and write it out.
+ *
+ * Persistence rides the same beats as the undo stack — the end of a gesture,
+ * never a frame inside one. A drag or a slider sweep re-renders continuously
+ * but only lands here on release, so the stored state is exactly the state you
+ * could undo back to, and an in-progress gesture costs nothing to persist.
+ */
+function commitChange() {
+  commitHistory();
+  persist();
+}
+
 /** Overlay a restored snapshot onto the live state and redraw. */
 function applySnapshot(snap) {
   Object.assign(state, JSON.parse(snap));
   render();
   updateHistoryButtons();
+  persist();
 }
 
 function undo() {
@@ -337,31 +367,31 @@ document.getElementById('p0-xy').addEventListener('change', (e) => {
   const p = parsePoint(e.target.value);
   if (p) state.p0 = p;
   render();
-  commitHistory();
+  commitChange();
 });
 document.getElementById('p1-xy').addEventListener('change', (e) => {
   const p = parsePoint(e.target.value);
   if (p) state.p1 = p;
   render();
-  commitHistory();
+  commitChange();
 });
 document.getElementById('through-xy').addEventListener('change', (e) => {
   const p = parsePoint(e.target.value);
   if (p) state.paramPoint = p;
   render();
-  commitHistory();
+  commitChange();
 });
 document.getElementById('t0-deg').addEventListener('change', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) state.t0Deg = v;
   render();
-  commitHistory();
+  commitChange();
 });
 document.getElementById('t1-deg').addEventListener('change', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) state.t1Deg = v;
   render();
-  commitHistory();
+  commitChange();
 });
 
 // ---------------------------------------------------------------------------
@@ -390,7 +420,7 @@ function applyModeContinuity(mode, prev) {
   if (typeof prev.a === 'number') {
     let sols;
     try {
-      sols = currentSolutions(buildFamily());
+      sols = currentSolutions(buildFamily()).solutions;
     } catch {
       return;
     }
@@ -419,7 +449,7 @@ document.getElementById('mode-buttons').addEventListener('click', (e) => {
   // Reveal the third point when entering "through" mode (render() first so the
   // through-mode solution is in lastEllipse before we frame it).
   if (state.mode === 'through' && ensureThroughPointVisible()) render();
-  commitHistory();
+  commitChange();
 });
 
 document.getElementById('param-range').addEventListener('input', (e) => {
@@ -428,7 +458,7 @@ document.getElementById('param-range').addEventListener('input', (e) => {
   render();
 });
 // Commit one history entry when the slider is released, not per step.
-document.getElementById('param-range').addEventListener('change', commitHistory);
+document.getElementById('param-range').addEventListener('change', commitChange);
 document.getElementById('param-text').addEventListener('input', (e) => {
   const v = parseNumber(e.target.value);
   if (v !== null) {
@@ -437,11 +467,16 @@ document.getElementById('param-text').addEventListener('input', (e) => {
     render();
   }
 });
-document.getElementById('param-text').addEventListener('change', commitHistory);
+document.getElementById('param-text').addEventListener('change', commitChange);
 
+// The two export toggles persist but are deliberately left out of the undo
+// stack (see TRACKED_KEYS), so they call `persist()` directly rather than going
+// through `commitChange()` — otherwise undoing a point move would quietly flip
+// your export settings back.
 document.getElementById('yup-toggle').addEventListener('change', (e) => {
   state.yUp = e.target.checked;
   render();
+  persist();
 });
 
 document.getElementById('arc-toggle').addEventListener('click', (e) => {
@@ -449,6 +484,7 @@ document.getElementById('arc-toggle').addEventListener('click', (e) => {
   if (!btn) return;
   state.arcChoice = btn.dataset.arc;
   render();
+  persist();
 });
 
 document.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
@@ -477,7 +513,7 @@ document.getElementById('reset-btn').addEventListener('click', () => {
   state = defaultState();
   render(); // solve the defaults so fitToContent has geometry to frame
   fitToContent();
-  commitHistory();
+  commitChange();
 });
 
 // ---------------------------------------------------------------------------
@@ -538,7 +574,7 @@ function endPointer() {
   panning = null;
   svg.classList.remove('dragging');
   // One history entry per completed handle drag (panning doesn't touch state).
-  if (wasDragging) commitHistory();
+  if (wasDragging) commitChange();
 }
 svg.addEventListener('pointerup', endPointer);
 svg.addEventListener('pointercancel', endPointer);
@@ -596,15 +632,54 @@ document.getElementById('zoom-reset').addEventListener('click', fitToContent);
 // browser wiring (history, location, localStorage) around it.
 // ---------------------------------------------------------------------------
 
-function saveState() {
+// Persisting is driven by `commitChange()` — the same settled-change beats that
+// feed the undo stack — not by `render()`. `render()` runs once per pointermove,
+// so writing through from there issued hundreds of `history.replaceState` calls
+// per drag, and Safari and Firefox rate-limit that API by *throwing* (Safari
+// allows ~100 calls per 30s). The exception surfaced inside the pointermove
+// handler and killed the drag mid-gesture, which is what made the tool feel
+// broken in Safari and on mobile. Mid-gesture state isn't worth storing anyway:
+// what gets written is exactly what you could undo back to.
+//
+// The trailing debounce below stays as a burst guard. Commit points are usually
+// sparse, but held Cmd+Z repeats at the OS key rate (~30/s), which would spend
+// Safari's budget in a few seconds. The debounce caps writes at
+// 1 / PERSIST_DELAY_MS, and both writes are wrapped so a throttle rejection can
+// never break interaction again.
+const PERSIST_DELAY_MS = 500;
+let persistTimer = null;
+
+/** Write the current state to the URL hash and localStorage immediately. */
+function persistNow() {
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
   const json = serializeState(state);
-  history.replaceState(null, '', `#${encodeURIComponent(json)}`);
+  try {
+    history.replaceState(null, '', `#${encodeURIComponent(json)}`);
+  } catch {
+    // Rate-limited by the browser. Dropping this write is harmless: the next
+    // one carries the whole state, not a delta.
+  }
   try {
     localStorage.setItem(STORAGE_KEY, json);
   } catch {
     // localStorage may be unavailable (private mode, disabled); ignore.
   }
 }
+
+/** Queue a persist, coalescing everything that happens within the delay. */
+function persist() {
+  if (persistTimer !== null) clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistNow, PERSIST_DELAY_MS);
+}
+
+// Write the live state before the page goes away. This is unconditional, not
+// just a flush of a pending timer: it also catches a change that never reached
+// a commit point, such as text typed into a field and then abandoned by closing
+// the tab rather than blurring it.
+addEventListener('pagehide', persistNow);
 
 function loadStateFromHash() {
   return decodeHash(location.hash.slice(1));
@@ -621,3 +696,8 @@ function loadStateFromStorage() {
 render(); // solve first so the initial fit has geometry to frame
 fitToContent();
 initHistory(); // seed the undo stack with the starting configuration
+// One write on load, now that `render()` no longer persists: it gives a bare
+// page a shareable hash without waiting for a first edit, and it writes back
+// the *validated* state, so a malformed stored snapshot is repaired in place
+// rather than lingering to be re-read on every future load.
+persist();

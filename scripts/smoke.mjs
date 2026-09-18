@@ -13,7 +13,7 @@
  * is found it prints a notice and exits 0, so environments without a browser
  * don't fail the build.
  *
- * Usage: node test/smoke.mjs
+ * Usage: npm run test:e2e  (or: node scripts/smoke.mjs)
  */
 
 import { spawn } from 'node:child_process';
@@ -224,6 +224,17 @@ async function main() {
       `!!document.getElementById('results') && !!document.getElementById('canvas').getAttribute('viewBox')`,
     );
     assert(responsive, `mode "${mode}" leaves the page responsive`);
+    // "Third point" has no input of its own — its whole control is the hint
+    // label, so the field must stay visible rather than being hidden along
+    // with the slider and text box.
+    if (mode === 'through') {
+      const hint = await cdp.evalValue(`(() => {
+        const field = document.getElementById('param-field');
+        return getComputedStyle(field).display !== 'none'
+          && document.getElementById('param-label').textContent.trim();
+      })()`);
+      assert(hint, 'third-point mode shows its hint label instead of hiding the field');
+    }
   }
   const afterCycle = JSON.parse(
     await cdp.evalValue(`JSON.stringify({
@@ -280,7 +291,54 @@ async function main() {
   const afterNext = await cdp.evalValue(`document.getElementById('results').textContent`);
   assert(beforeNext !== afterNext, 'Next switches to the other solution');
 
-  console.log('PASS: page boots, solves, exports a well-formed arc, cycles all modes, opens mode help, and cycles multi-solutions.');
+  // 9. Persistence rides settled changes (the undo-stack beats), never frames
+  // inside a gesture. render() runs once per pointermove, so writing through
+  // from there issued hundreds of history.replaceState calls per drag — and
+  // Safari and Firefox rate-limit that API by *throwing* (Safari: ~100 calls per
+  // 30s), which surfaced in the pointermove handler and killed the drag. Chrome
+  // only throttles silently, so this counts calls rather than waiting for a
+  // throw: sweeping a slider must persist nothing at all, and releasing it must
+  // write exactly once.
+  const throttleReport = await cdp.evalValue(`(async () => {
+    const orig = history.replaceState.bind(history);
+    let calls = 0;
+    history.replaceState = (...args) => { calls++; return orig(...args); };
+    const settle = () => new Promise((r) => setTimeout(r, 700));
+    try {
+      document.querySelector('#mode-buttons button[data-mode="rotation"]').click();
+      await settle();
+      calls = 0;
+
+      // 200 mid-gesture renders: the slider sweeping, nothing settled yet.
+      const range = document.getElementById('param-range');
+      for (let i = 0; i < 200; i++) {
+        range.value = String(1 + (i % 89));
+        range.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await settle();
+      const sweeping = calls;
+
+      // Release: one settled change, one write.
+      range.dispatchEvent(new Event('change', { bubbles: true }));
+      await settle();
+      return JSON.stringify({ sweeping, settled: calls, hash: location.hash.length });
+    } finally {
+      history.replaceState = orig;
+    }
+  })()`);
+  const throttle = JSON.parse(throttleReport);
+  assert(!pageError, `render burst throws no page exception (got: ${pageError})`);
+  assert(
+    throttle.sweeping === 0,
+    `a 200-render slider sweep must persist nothing (got ${throttle.sweeping} replaceState calls)`,
+  );
+  assert(
+    throttle.settled >= 1 && throttle.settled <= 2,
+    `releasing the slider must write exactly once (got ${throttle.settled})`,
+  );
+  assert(throttle.hash > 1, 'the settled state reaches the URL hash');
+
+  console.log('PASS: page boots, solves, exports a well-formed arc, cycles all modes, opens mode help, cycles multi-solutions, and persists only settled changes.');
   console.log(`  path:     ${snapshot.path}`);
   console.log(`  ARC type: ${arc.type} ${arc.direction} ${arc.arc_size}`);
   finish(0);

@@ -11,6 +11,7 @@
  */
 
 import { formatDisplay } from './format.js';
+import { MODES } from './ellipse.js';
 
 // Canvas design size, in world units, at the default (unzoomed) view. Screen
 // sizes for points/handles are scaled by view.w / VIEW_W so they stay constant
@@ -52,9 +53,42 @@ export function defaultState() {
   return structuredClone(DEFAULT_STATE);
 }
 
-/** Overlay a restored (possibly partial or null) state on top of the defaults. */
+const isFinitePoint = (p) =>
+  !!p && typeof p === 'object' && Number.isFinite(p.x) && Number.isFinite(p.y);
+
+/**
+ * Overlay a restored (possibly partial, null, or malformed) state on top of
+ * the defaults, keeping only fields that have the shape the render cycle
+ * expects.
+ *
+ * Restored state is untrusted. It comes from a URL hash anyone can hand-edit
+ * and from localStorage, which may still hold a snapshot written by an older
+ * version with a different shape. A shallow merge would carry something like
+ * `p0: null` or `solutionIndex: -1` straight into the solve/draw path, where
+ * it throws and leaves a blank page with no way to recover short of clearing
+ * the hash by hand. Validating here means a bad field costs you that one
+ * setting instead of the whole app.
+ */
 export function withDefaults(partial) {
-  return { ...structuredClone(DEFAULT_STATE), ...(partial ?? {}) };
+  const base = structuredClone(DEFAULT_STATE);
+  if (!partial || typeof partial !== 'object') return base;
+  if (isFinitePoint(partial.p0)) base.p0 = { x: partial.p0.x, y: partial.p0.y };
+  if (isFinitePoint(partial.p1)) base.p1 = { x: partial.p1.x, y: partial.p1.y };
+  if (isFinitePoint(partial.paramPoint)) {
+    base.paramPoint = { x: partial.paramPoint.x, y: partial.paramPoint.y };
+  }
+  if (Number.isFinite(partial.t0Deg)) base.t0Deg = partial.t0Deg;
+  if (Number.isFinite(partial.t1Deg)) base.t1Deg = partial.t1Deg;
+  if (MODES.includes(partial.mode)) base.mode = partial.mode;
+  if (Number.isFinite(partial.param)) base.param = partial.param;
+  if (typeof partial.yUp === 'boolean') base.yUp = partial.yUp;
+  if (partial.arcChoice === 'small' || partial.arcChoice === 'large') {
+    base.arcChoice = partial.arcChoice;
+  }
+  if (Number.isInteger(partial.solutionIndex) && partial.solutionIndex >= 0) {
+    base.solutionIndex = partial.solutionIndex;
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +302,11 @@ export function zoomView(view, factor, fx, fy) {
 
 /** A "nice" grid spacing (1/2/5 × 10^n) giving roughly `divisions` lines across a span. */
 export function niceStep(span, divisions = 16) {
+  // A non-positive or non-finite span has no meaningful spacing, and the zero
+  // this used to return would hang the caller: drawGrid steps its loop by this
+  // value, so `x += 0` spins forever and locks up the tab. Fall back to a
+  // positive step instead.
+  if (!(span > 0) || !Number.isFinite(span)) return 1;
   const target = span / divisions;
   const pow = Math.pow(10, Math.floor(Math.log10(target)));
   for (const m of [1, 2, 5, 10]) if (m * pow >= target) return m * pow;

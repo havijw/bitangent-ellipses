@@ -143,7 +143,10 @@ export function syncControlsFromState(state) {
       document.getElementById('param-value').textContent = '';
       if (document.activeElement !== textInput) textInput.value = state.param;
     } else {
-      field.style.display = 'none';
+      // kind: 'none' — the label is the whole control ("drag the yellow point").
+      // Both inputs are already hidden above, so the field shows the hint alone;
+      // hiding the field here instead would suppress the hint entirely.
+      document.getElementById('param-value').textContent = '';
     }
   }
 }

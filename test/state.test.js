@@ -48,6 +48,52 @@ test('withDefaults overlays a partial state and tolerates null', () => {
   assert.deepEqual(withDefaults(undefined), DEFAULT_STATE);
 });
 
+// Restored state is untrusted: the URL hash is hand-editable and localStorage
+// can still hold a snapshot from an older schema. Every one of these used to
+// pass straight through a shallow merge and take the render cycle down with it.
+test('withDefaults drops malformed fields instead of propagating them', () => {
+  const bad = withDefaults({
+    p0: null,
+    p1: { x: 1, y: 'nope' },
+    paramPoint: { x: NaN, y: 0 },
+    t0Deg: 'twelve',
+    t1Deg: Infinity,
+    mode: 'not-a-mode',
+    param: null,
+    yUp: 'yes',
+    arcChoice: 'sideways',
+    solutionIndex: -1,
+  });
+  assert.deepEqual(bad, DEFAULT_STATE, 'every unusable field falls back to its default');
+
+  // A non-object (or a JSON scalar that survived parsing) is not a state.
+  assert.deepEqual(withDefaults(42), DEFAULT_STATE);
+  assert.deepEqual(withDefaults('nope'), DEFAULT_STATE);
+
+  // Valid fields still come through, including ones the defaults don't use.
+  const good = withDefaults({
+    p0: { x: -3.5, y: 7 },
+    mode: 'ratio',
+    param: 2.5,
+    yUp: true,
+    arcChoice: 'large',
+    solutionIndex: 1,
+  });
+  assert.deepEqual(good.p0, { x: -3.5, y: 7 });
+  assert.equal(good.mode, 'ratio');
+  assert.equal(good.param, 2.5);
+  assert.equal(good.yUp, true);
+  assert.equal(good.arcChoice, 'large');
+  assert.equal(good.solutionIndex, 1);
+});
+
+test('withDefaults copies nested points rather than aliasing the input', () => {
+  const input = { p0: { x: 1, y: 2 } };
+  const s = withDefaults(input);
+  input.p0.x = 999;
+  assert.equal(s.p0.x, 1, 'mutating the source must not reach into restored state');
+});
+
 test('state serialization round-trips and rejects garbage', () => {
   const s = defaultState();
   s.p0 = { x: 12.3456789, y: -4.7654321 };
@@ -214,6 +260,15 @@ test('niceStep returns 1/2/5 x 10^n spacings', () => {
   const step = niceStep(37, 16);
   assert.ok(step >= 37 / 16);
   assert.ok([1, 2, 5, 10].some((m) => Math.abs(step / (m * Math.pow(10, Math.round(Math.log10(step / m)))) - 1) < 1e-9) || step > 0);
+});
+
+// drawGrid steps its loop by this value, so a zero or NaN step would spin
+// forever and lock the tab. The step must always be a usable positive number.
+test('niceStep never returns a non-positive step', () => {
+  for (const span of [0, -5, -0, NaN, Infinity, -Infinity]) {
+    const step = niceStep(span);
+    assert.ok(step > 0 && Number.isFinite(step), `niceStep(${span}) returned ${step}`);
+  }
 });
 
 test('view constants are internally consistent', () => {
