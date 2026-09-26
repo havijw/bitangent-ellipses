@@ -36,6 +36,8 @@ import {
   fitView,
   zoomView,
   pointInView,
+  screenScale,
+  pinchView,
   History,
 } from './src/state.js';
 import { el } from './src/ui/dom.js';
@@ -43,7 +45,28 @@ import { drawGrid, drawStaticGeometry, drawEllipseOverlay, drawArcOverlay, drawH
 import { renderResults, renderSolutionCycler, renderExports, syncControlsFromState } from './src/ui/panels.js';
 
 const svg = document.getElementById('canvas');
-const HANDLE_LEN = 70;
+
+// Is the primary pointer a fingertip? Read live rather than latched at load,
+// so a tablet switching between touch and a trackpad keeps up.
+const coarsePointer = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
+
+/**
+ * Handle geometry in CSS pixels (converted to world units by `pxScale` when
+ * drawn). `hit` is the invisible grab radius: a fingertip covers several
+ * millimetres of glass, so a 14px target that is comfortable under a mouse is
+ * a miss on a phone. Widening the grab area rather than the drawn dot keeps
+ * touch usable without turning the canvas into a field of blobs.
+ */
+function handleSizes() {
+  const touch = !!coarsePointer?.matches;
+  return {
+    stalk: 70, // tangent arrowhead's offset from its point
+    point: touch ? 10 : 8,
+    arrow: touch ? 11 : 9,
+    third: touch ? 8 : 6,
+    hit: touch ? 26 : 14,
+  };
+}
 
 // The visible window into world space, as an SVG viewBox. Panning shifts x/y;
 // zooming scales w/h about the cursor. It is deliberately kept out of `state`
@@ -51,9 +74,10 @@ const HANDLE_LEN = 70;
 // whatever zoom the author happened to leave it at.
 let view = { ...DEFAULT_VIEW };
 
-// World units per default unit; used to keep point/handle sizes and the
-// tangent-handle offset constant on screen regardless of zoom.
-let sizeScale = 1;
+// World units per CSS pixel: the factor that keeps point/handle sizes and the
+// tangent-handle offset constant on screen regardless of zoom *or* how large
+// the canvas element is. Recomputed from the measured element in applyView().
+let pxScale = 1;
 
 // The most recently solved ellipse, or null when the inputs have no ellipse.
 // `fitToContent` reads it to frame the view around the actual geometry.
@@ -62,7 +86,9 @@ let lastSolution = null; // full solution object of the displayed ellipse (carri
 
 function applyView() {
   svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-  sizeScale = view.w / VIEW_W;
+  // canvasPixels is the measurement syncViewToCanvas already took; fall back
+  // to measuring only on the very first render, before it has run.
+  pxScale = screenScale(view, canvasPixels?.w || svg.getBoundingClientRect().width);
 }
 
 /** Zoom by `factor` (>1 zooms out) about a fixed screen fraction (fx, fy) in [0,1]. */
@@ -203,17 +229,17 @@ function render() {
     family = buildFamily();
   } catch (err) {
     showError(err);
-    drawStaticGeometry(staticGroup, state, null, view, sizeScale);
+    drawStaticGeometry(staticGroup, state, null, view, pxScale);
     ellipseGroup.innerHTML = '';
     arcGroup.innerHTML = '';
     renderResults(state, [], 0);
     renderSolutionCycler([], 0, onCycleSolution);
     renderExports(state, null, null);
-    drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
+    drawHandles(handlesGroup, state, pxScale, handleSizes());
     return;
   }
 
-  drawStaticGeometry(staticGroup, state, family, view, sizeScale);
+  drawStaticGeometry(staticGroup, state, family, view, pxScale);
 
   let solutions;
   let rejected;
@@ -226,7 +252,7 @@ function render() {
     renderResults(state, [], 0);
     renderSolutionCycler([], 0, onCycleSolution);
     renderExports(state, family, null);
-    drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
+    drawHandles(handlesGroup, state, pxScale, handleSizes());
     return;
   }
 
@@ -242,7 +268,7 @@ function render() {
     renderResults(state, [], 0);
     renderSolutionCycler([], 0, onCycleSolution);
     renderExports(state, family, null);
-    drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
+    drawHandles(handlesGroup, state, pxScale, handleSizes());
     return;
   }
 
@@ -255,7 +281,7 @@ function render() {
   lastEllipse = solution.ellipse;
   lastSolution = solution;
 
-  drawEllipseOverlay(ellipseGroup, solution.ellipse, sizeScale);
+  drawEllipseOverlay(ellipseGroup, solution.ellipse, pxScale);
   // The canvas is always y-down; the export boxes may use the opposite
   // convention, whose sweep flag differs, so recompute the arc per convention.
   const canvasArc = pickArc(family, solution.ellipse, false);
@@ -264,7 +290,7 @@ function render() {
   renderResults(state, solutions, index);
   renderSolutionCycler(solutions, index, onCycleSolution);
   renderExports(state, family, solution.ellipse, exportArc, canvasArc);
-  drawHandles(handlesGroup, state, sizeScale, HANDLE_LEN);
+  drawHandles(handlesGroup, state, pxScale, handleSizes());
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +535,16 @@ if (helpDialog && helpBtn) {
   });
 }
 
+// The small-screen control drawer has no wiring here on purpose. Below the
+// responsive breakpoint the sidebar becomes a bottom sheet showing only the
+// "pick the ellipse" controls, and a wide arrow expands it — but that arrow is
+// a <label> driving a hidden checkbox, and the stylesheet reads its :checked
+// state. Nothing about it is stateful or computed, so routing it through JS
+// only created ways for it to break (a stale or still-loading ui.js leaves the
+// control inert while looking perfectly normal). Growing the sheet resizes the
+// canvas, which the ResizeObserver above already turns into a re-frame at the
+// same scale, so even that needs no handler.
+
 document.getElementById('reset-btn').addEventListener('click', () => {
   state = defaultState();
   render(); // solve the defaults so fitToContent has geometry to frame
@@ -535,7 +571,48 @@ function svgPoint(evt) {
 let dragging = null; // a handle id while dragging a point/handle
 let panning = null; // { sx, sy, vx, vy } while panning the canvas
 
+// Every pointer currently down on the canvas, keyed by pointerId. One is a
+// drag or a pan; two at once is a pinch — how touch devices zoom. A *trackpad*
+// pinch never reaches here: the OS delivers it as a ctrl+wheel event, which
+// the wheel handler below already zooms on.
+const activePointers = new Map(); // pointerId -> { x, y } in client pixels
+let pinchPair = null; // the two pointerIds being pinched, or null
+let pinchPrev = null; // their positions on the previous frame
+
+/** The pinched pointers' current positions, in the order the pinch started. */
+function pinchPositions() {
+  return pinchPair.map((id) => activePointers.get(id));
+}
+
+/**
+ * Finish whatever single-pointer gesture is running. A drag that moved a
+ * handle lands one undo entry here; panning touches no state, so it just
+ * stops.
+ */
+function endGesture() {
+  const wasDragging = dragging !== null;
+  dragging = null;
+  panning = null;
+  svg.classList.remove('dragging');
+  if (wasDragging) commitChange();
+}
+
 svg.addEventListener('pointerdown', (e) => {
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  // A second finger promotes whatever was in progress into a pinch. The
+  // in-flight drag is ended rather than abandoned, so the handle it already
+  // moved still gets its undo entry.
+  if (activePointers.size === 2 && !pinchPair) {
+    endGesture();
+    pinchPair = [...activePointers.keys()];
+    pinchPrev = pinchPositions();
+    svg.setPointerCapture(e.pointerId);
+    return;
+  }
+  // A third finger (or another one during a pinch) is ignored.
+  if (activePointers.size > 1) return;
+
   const handle = e.target.dataset?.handle;
   if (handle) {
     dragging = handle;
@@ -550,6 +627,19 @@ svg.addEventListener('pointerdown', (e) => {
 });
 
 svg.addEventListener('pointermove', (e) => {
+  // Always a fresh object: pinchPrev holds the previous frame's objects, so
+  // mutating them in place would erase the delta the gesture is measured from.
+  if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pinchPair) {
+    const next = pinchPositions();
+    if (!next[0] || !next[1]) return;
+    view = pinchView(view, pinchPrev, next, svg.getBoundingClientRect());
+    pinchPrev = next;
+    render();
+    return;
+  }
+
   if (dragging) {
     const p = svgPoint(e);
     if (dragging === 'p0') state.p0 = p;
@@ -568,13 +658,19 @@ svg.addEventListener('pointermove', (e) => {
   }
 });
 
-function endPointer() {
-  const wasDragging = dragging !== null;
-  dragging = null;
-  panning = null;
-  svg.classList.remove('dragging');
-  // One history entry per completed handle drag (panning doesn't touch state).
-  if (wasDragging) commitChange();
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
+  // Lifting one of the pinched fingers ends the pinch — unless a third finger
+  // is still down, in which case the gesture re-seats onto the survivors (with
+  // a fresh baseline, so the view doesn't jump) rather than freezing until
+  // every finger is up. A single remaining finger deliberately does *not*
+  // become a pan: adopting it mid-gesture would snap the view to wherever it
+  // happens to be. It takes a fresh touch to start panning again.
+  if (pinchPair && !pinchPair.every((id) => activePointers.has(id))) {
+    pinchPair = activePointers.size >= 2 ? [...activePointers.keys()].slice(0, 2) : null;
+    pinchPrev = pinchPair ? pinchPositions() : null;
+  }
+  endGesture();
 }
 svg.addEventListener('pointerup', endPointer);
 svg.addEventListener('pointercancel', endPointer);
@@ -586,7 +682,9 @@ svg.addEventListener(
     e.preventDefault();
     const { fx, fy } = screenFraction(e);
     // Positive deltaY (scroll down) zooms out; the exponent keeps it smooth.
-    zoomAbout(Math.exp(e.deltaY * 0.0015), fx, fy);
+    // A trackpad pinch arrives here as ctrl+wheel with much smaller deltas, so
+    // it gets a steeper rate — otherwise a full pinch barely moves the zoom.
+    zoomAbout(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), fx, fy);
   },
   { passive: false },
 );

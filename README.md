@@ -97,6 +97,14 @@ localStorage, so reopening the page later restores your last setup even
 without the hash; a hash in the URL always takes precedence over the stored
 copy, and "Reset to defaults" clears back to the starting configuration.
 
+Navigate the canvas by scrolling to zoom and dragging empty space to pan; on a
+touch screen, pinch with two fingers to zoom and pan together. The layout is
+responsive: below 760px the sidebar becomes a bottom drawer holding just the
+"pick the ellipse" controls, and the wide arrow at its top expands it to the
+full panel (a pure-CSS disclosure — it needs no JavaScript). The draggable points are sized in screen pixels rather than
+canvas units, so they stay the same size at any zoom and on any display, with
+a grab area widened for fingertips on touch devices.
+
 All reported and exported numbers are full-precision: they are emitted as
 their shortest round-trippable form rather than rounded to a fixed number of
 decimals, so copying a radius, rotation, or path loses none of the digits the

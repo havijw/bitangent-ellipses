@@ -13,9 +13,10 @@
 import { formatDisplay } from './format.js';
 import { MODES } from './ellipse.js';
 
-// Canvas design size, in world units, at the default (unzoomed) view. Screen
-// sizes for points/handles are scaled by view.w / VIEW_W so they stay constant
-// on screen at any zoom.
+// Canvas design size, in world units, at the default (unzoomed) view. It sets
+// the starting viewBox and acts as the fallback width when the canvas element
+// hasn't been measured yet; on-screen sizes for points/handles come from
+// `screenScale` instead, which measures the element.
 export const VIEW_W = 800;
 export const VIEW_H = 600;
 
@@ -317,6 +318,62 @@ export function niceStep(span, divisions = 16) {
 // ---------------------------------------------------------------------------
 // Screen / canvas geometry (pure; the browser layer supplies the live view)
 // ---------------------------------------------------------------------------
+
+/**
+ * World units per CSS pixel: the factor that converts a size in screen pixels
+ * into the world-space size that renders at exactly that many pixels.
+ *
+ * `view.w / VIEW_W` (what this replaced) only holds while the canvas element
+ * is VIEW_W pixels wide. Everywhere else it silently rescales with the
+ * element, so the draggable points shrank as the window narrowed and were
+ * tiny on a phone — the one place they need to be biggest. Dividing by the
+ * measured pixel width instead pins every handle to a fixed physical size at
+ * any zoom and any canvas size. `pxWidth` falls back to the design width when
+ * the element hasn't been laid out yet (the very first render).
+ */
+export function screenScale(view, pxWidth) {
+  return view.w / (pxWidth > 0 ? pxWidth : VIEW_W);
+}
+
+const pinchDistance = (pair) => Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
+const pinchMidpoint = (pair) => ({ x: (pair[0].x + pair[1].x) / 2, y: (pair[0].y + pair[1].y) / 2 });
+
+/**
+ * One frame of a two-finger pinch. `prev` and `next` are the two live pointer
+ * positions (`[{x, y}, {x, y}]`, in client pixels) before and after the move,
+ * and `rect` is the canvas element's client rectangle. Returns the new view.
+ *
+ * Both halves of the gesture are applied: the change in finger separation
+ * zooms about the midpoint between them, and the midpoint's own travel pans.
+ * Together those keep the world pinned under the fingers, so a pinch that
+ * drifts across the screen drags the drawing with it the way a map does.
+ * Degenerate input (an unmeasured canvas, or fingers exactly on top of each
+ * other) returns the view untouched rather than producing NaNs.
+ */
+export function pinchView(view, prev, next, rect) {
+  if (!rect || !(rect.width > 0) || !(rect.height > 0)) return view;
+  const before = pinchDistance(prev);
+  const after = pinchDistance(next);
+  if (!(before > 0) || !(after > 0)) return view;
+
+  // zoomView's factor multiplies the view width, so >1 zooms *out*: spreading
+  // the fingers (after > before) has to shrink it, hence before / after.
+  const m1 = pinchMidpoint(next);
+  const zoomed = zoomView(
+    view,
+    before / after,
+    (m1.x - rect.left) / rect.width,
+    (m1.y - rect.top) / rect.height,
+  );
+
+  // Then translate by the midpoint's travel, measured at the new zoom.
+  const m0 = pinchMidpoint(prev);
+  return {
+    ...zoomed,
+    x: zoomed.x - ((m1.x - m0.x) / rect.width) * zoomed.w,
+    y: zoomed.y - ((m1.y - m0.y) / rect.height) * zoomed.h,
+  };
+}
 
 /**
  * The endpoint of a tangent handle: the point `len` world units from `p` in

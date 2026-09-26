@@ -23,6 +23,8 @@ import {
   zoomView,
   niceStep,
   handleOffset,
+  screenScale,
+  pinchView,
   pointInView,
   clipLineToView,
   resultRows,
@@ -365,4 +367,68 @@ test('History caps the stack at maxEntries, dropping the oldest', () => {
   assert.equal(h.undo(), '2');
   assert.equal(h.undo(), '1');
   assert.equal(h.undo(), null, "the oldest entry ('0') was dropped");
+});
+
+test('screenScale converts pixels to world units at any canvas size', () => {
+  // The whole point of the change it backs: a size in screen pixels must come
+  // out the same on screen whatever the canvas measures. A 10px dot in a
+  // 300px-wide canvas showing 60 world units must span 2 world units, which is
+  // 10/300 of the width — exactly as it would in an 800px canvas.
+  const view = { x: 0, y: 0, w: 60, h: 45 };
+  assert.equal(10 * screenScale(view, 300), 2);
+  const wide = { x: 0, y: 0, w: 160, h: 120 };
+  assert.equal(10 * screenScale(wide, 800), 2);
+  // Zooming in halves the world size of the same pixel count.
+  assert.equal(10 * screenScale({ ...view, w: 30 }, 300), 1);
+  // Unmeasured canvas: fall back to the design width rather than dividing by 0.
+  assert.equal(screenScale(view, 0), 60 / VIEW_W);
+  assert.ok(Number.isFinite(screenScale(view, undefined)));
+});
+
+test('pinchView zooms by the change in finger separation', () => {
+  const view = { x: 0, y: 0, w: 800, h: 600 };
+  const rect = { left: 0, top: 0, width: 800, height: 600 };
+  // Fingers spread to twice the separation about a fixed midpoint: the view
+  // must halve (zoom in), and the midpoint must stay over the same world point.
+  const prev = [{ x: 300, y: 300 }, { x: 500, y: 300 }];
+  const next = [{ x: 200, y: 300 }, { x: 600, y: 300 }];
+  const out = pinchView(view, prev, next, rect);
+  assert.ok(Math.abs(out.w - 400) < 1e-9, `w ${out.w}`);
+  assert.ok(Math.abs(out.h - 300) < 1e-9, `h ${out.h}`);
+  assert.ok(Math.abs(out.x + out.w / 2 - 400) < 1e-9, 'midpoint world x is unchanged');
+  assert.ok(Math.abs(out.y + out.h / 2 - 300) < 1e-9, 'midpoint world y is unchanged');
+
+  // Bringing them together zooms out.
+  assert.ok(pinchView(view, next, prev, rect).w > view.w);
+});
+
+test('pinchView pans by the midpoint travel', () => {
+  const view = { x: 0, y: 0, w: 800, h: 600 };
+  const rect = { left: 0, top: 0, width: 800, height: 600 };
+  // Separation unchanged, both fingers slid 100px right and 50px down: pure
+  // pan, so the view moves the opposite way by the same world distance.
+  const prev = [{ x: 300, y: 300 }, { x: 500, y: 300 }];
+  const next = [{ x: 400, y: 350 }, { x: 600, y: 350 }];
+  const out = pinchView(view, prev, next, rect);
+  assert.ok(Math.abs(out.w - 800) < 1e-9, 'no zoom');
+  assert.ok(Math.abs(out.x + 100) < 1e-9, `x ${out.x}`);
+  assert.ok(Math.abs(out.y + 50) < 1e-9, `y ${out.y}`);
+});
+
+test('pinchView leaves the view alone on degenerate input', () => {
+  const view = { x: 0, y: 0, w: 800, h: 600 };
+  const pair = [{ x: 300, y: 300 }, { x: 500, y: 300 }];
+  const same = [{ x: 400, y: 300 }, { x: 400, y: 300 }]; // fingers coincide
+  assert.deepEqual(pinchView(view, pair, pair, { left: 0, top: 0, width: 0, height: 0 }), view);
+  assert.deepEqual(pinchView(view, pair, pair, null), view);
+  assert.deepEqual(pinchView(view, same, pair, { left: 0, top: 0, width: 800, height: 600 }), view);
+  assert.deepEqual(pinchView(view, pair, same, { left: 0, top: 0, width: 800, height: 600 }), view);
+});
+
+test('pinchView honors the zoom clamps', () => {
+  const rect = { left: 0, top: 0, width: 800, height: 600 };
+  const view = { x: 0, y: 0, w: MIN_VIEW_W, h: MIN_VIEW_W * 0.75 };
+  // Already at the closest zoom; spreading the fingers further must not pass it.
+  const out = pinchView(view, [{ x: 300, y: 300 }, { x: 500, y: 300 }], [{ x: 100, y: 300 }, { x: 700, y: 300 }], rect);
+  assert.equal(out.w, MIN_VIEW_W);
 });

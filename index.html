@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<!-- Without this a phone renders the page at a ~980px virtual width and then
+     shrinks it, so every media query below sees a desktop and the whole
+     responsive layout never engages. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Two-tangent ellipse</title>
 <!-- Preload the whole ES-module graph so the browser fetches it in parallel
      instead of discovering each import one wave at a time (a latency
@@ -67,7 +71,11 @@
     background: var(--bg);
     color: var(--text);
     display: flex;
+    /* 100vh on mobile is the viewport with the browser chrome retracted, so a
+       bottom-anchored drawer ends up underneath the toolbar. dvh tracks the
+       height actually visible; the vh line is the fallback for older engines. */
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
   }
   #canvas-wrap {
@@ -291,7 +299,8 @@
   }
   .help-btn:hover { border-color: var(--accent); color: var(--accent); }
   dialog#help-dialog {
-    max-width: 460px; width: calc(100% - 32px); max-height: calc(100vh - 64px);
+    max-width: 460px; width: calc(100% - 32px);
+    max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px);
     border: 1px solid var(--panel-border); border-radius: 12px;
     background: var(--panel); color: var(--text);
     padding: 0; overflow: hidden; box-shadow: 0 12px 44px var(--overlay-shadow);
@@ -321,6 +330,148 @@
     font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer;
   }
   #solution-next:hover { text-decoration: underline; }
+
+  /* --- the small-screen control drawer ---------------------------------
+     Below the breakpoint the sidebar stops being a side bar: it stacks under
+     the canvas as a bottom sheet holding just the "pick the ellipse"
+     controls, and this wide arrow expands it to the full panel. The handle
+     only exists in that layout, and the whole toggle is CSS: a hidden
+     checkbox whose `:checked` state the rules below read. No script involved. */
+  /* Hidden outright above the breakpoint: there is no drawer there, and a
+     visually-hidden checkbox would still be a Tab stop that appears to do
+     nothing. The media query below brings it back off-screen-but-focusable
+     where it is real. :checked still matches while display:none, so nothing
+     about the toggle depends on this. */
+  #panel-open { display: none; }
+  #panel-toggle {
+    display: none;
+    width: 100%;
+    padding: 7px 0 5px;
+    /* A <label> inherits the panel's left alignment, where the <button> this
+       replaced centred its content by default. */
+    text-align: center;
+    color: var(--text-dim);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Kept as separate rules on purpose: a selector list containing a pseudo-class
+     the browser doesn't know is invalid as a whole, so pairing these would lose
+     :hover too on any Safari predating :focus-visible. */
+  #panel-toggle:hover { color: var(--accent); }
+  #panel-open:focus-visible ~ #panel-toggle { color: var(--accent); }
+  /* Presses land on the label itself rather than the chevron or the text. */
+  #panel-toggle > * { pointer-events: none; }
+  /* A broad, shallow chevron reads as "there is more below" far better than a
+     small caret, and gives the whole strip an obvious place to press. */
+  #panel-toggle svg { display: block; margin: 0 auto; transition: transform 0.2s ease; }
+  #panel-open:checked ~ #panel-toggle svg { transform: rotate(180deg); }
+  .panel-toggle-text {
+    display: block;
+    margin-top: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  /* Only one caption shows; :checked swaps which. This block must stay *after*
+     .panel-toggle-text: same specificity, so order alone decides, and putting
+     the hide first let the generic display:block win and printed both. */
+  .panel-text-open { display: none; }
+  #panel-open:checked ~ #panel-toggle .panel-text-closed { display: none; }
+  #panel-open:checked ~ #panel-toggle .panel-text-open { display: block; }
+
+  /* Intermediate widths: keep both columns, just give the canvas more room. */
+  @media (max-width: 1080px) {
+    #sidebar { width: 296px; flex-basis: 296px; }
+  }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; }
+    /* min-height: 0 lets the canvas actually shrink; without it the flex item
+       refuses to go below its content size and pushes the drawer off screen. */
+    #canvas-wrap { flex: 1 1 auto; min-height: 0; }
+    #sidebar {
+      width: 100%;
+      flex: 0 0 auto;
+      border-left: none;
+      border-top: 1px solid var(--panel-border);
+      padding: 0 14px calc(10px + env(safe-area-inset-bottom));
+      box-shadow: 0 -8px 20px var(--overlay-shadow);
+      /* Capped in both states rather than only when open: collapsed content is
+         far shorter than the cap so it never bites, and keeping it here means
+         the open state needs no rule on #sidebar — which a sibling selector on
+         the checkbox could not reach anyway. The vh line is the fallback for a
+         browser without dvh, which would otherwise drop the cap entirely and
+         let the sheet grow past the clipped viewport. */
+      max-height: 76vh;
+      max-height: 76dvh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #panel-toggle { display: block; }
+    /* Off-screen but still focusable and still driven by the label, so the
+       drawer is keyboard-operable (Tab to it, Space to toggle). */
+    #panel-open {
+      display: block;
+      position: absolute;
+      width: 1px; height: 1px;
+      margin: -1px; padding: 0; border: 0;
+      clip-path: inset(50%);
+      overflow: hidden; white-space: nowrap;
+    }
+
+    /* Collapsed: the fifth-constraint controls and nothing else. The error box
+       is the exception — it lives in the Result section but reports that the
+       current control value has no ellipse, so hiding it would leave a dead
+       slider with no explanation. Its section stays, its readout goes. */
+    #sidebar > h1,
+    #sidebar > p.hint,
+    #sec-points,
+    #sec-export,
+    #sec-result > h2,
+    #results { display: none; }
+
+    /* Flatten the mode groups into one compact grid. Each group label costs a
+       row of its own, which is most of the drawer's height budget on a phone;
+       the "?" dialog covers what the groups were signposting. */
+    #mode-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .mode-group, .mode-grid { display: contents; }
+    .mode-group-label { display: none; }
+    .mode-buttons button { padding: 9px 4px; }
+    #sec-pick > h2 { margin: 4px 0 8px; }
+
+    /* Expanded: the whole panel, revealed by the checkbox's sibling state. */
+    #panel-open:checked ~ h1,
+    #panel-open:checked ~ p.hint,
+    #panel-open:checked ~ #sec-points,
+    #panel-open:checked ~ #sec-export,
+    #panel-open:checked ~ #sec-result > h2,
+    #panel-open:checked ~ #sec-result > #results { display: block; }
+
+    /* iOS Safari zooms the whole page when a focused field's text is under
+       16px, which leaves the layout scrolled and scaled with no way back. */
+    input[type="text"], input[type="number"], select, textarea { font-size: 16px; }
+
+    /* No scroll wheel to hint about, and the corner clusters go vertical so
+       they take a narrow bite out of a narrow canvas. */
+    #zoom-hint { display: none; }
+    #zoom-controls, #history-controls { flex-direction: column; }
+  }
+
+  /* Touch-sized targets wherever the pointer is a fingertip, independent of
+     width — a tablet in landscape is wide but still touch-driven. */
+  @media (pointer: coarse) {
+    #zoom-controls button, #history-controls button { width: 44px; height: 44px; font-size: 20px; }
+    #zoom-controls button.reset { width: auto; padding: 0 14px; font-size: 13px; }
+    .help-btn { width: 24px; height: 24px; font-size: 13px; }
+    .copy-btn { padding: 8px 12px; font-size: 12px; }
+    #panel-toggle { padding: 11px 0 8px; }
+  }
 </style>
 </head>
 <body>
@@ -339,12 +490,30 @@
     <div id="zoom-hint">Scroll to zoom &middot; drag canvas to pan</div>
   </div>
   <div id="sidebar">
+    <!-- The drawer handle: a checkbox plus its label, not a scripted button.
+         Everything it does is presentational, and a label driving a checkbox is
+         the most widely supported interactive primitive there is — so the
+         drawer keeps working even if ui.js is stale, blocked, or still loading,
+         and there is no click handler for a browser to mis-target. The
+         stylesheet reads `#panel-open:checked`; nothing in JS touches it.
+         Both hidden above the responsive breakpoint, where the whole panel is
+         visible and there is nothing to expand. -->
+    <input type="checkbox" id="panel-open" />
+    <label for="panel-open" id="panel-toggle">
+      <svg width="76" height="13" viewBox="0 0 76 13" aria-hidden="true" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9 38 4 72 9" />
+      </svg>
+      <span class="panel-toggle-text panel-text-closed">All controls</span>
+      <span class="panel-toggle-text panel-text-open">Fewer controls</span>
+    </label>
     <h1>Ellipse from two tangents</h1>
     <p class="hint">
       Drag the <span class="dot dot-p0"></span>green and <span class="dot dot-p1"></span>red
       points and their tangent arrows on the canvas &mdash; or type exact values below.
     </p>
 
+    <section id="sec-points">
     <h2>Points &amp; tangents</h2>
     <div class="row">
       <div class="field"><label><span class="dot dot-p0"></span>P0 (x, y)</label><input type="text" id="p0-xy" /></div>
@@ -354,7 +523,9 @@
       <div class="field"><label><span class="dot dot-p1"></span>P1 (x, y)</label><input type="text" id="p1-xy" /></div>
       <div class="field"><label>Tangent at P1 (deg)</label><input type="text" id="t1-deg" /></div>
     </div>
+    </section>
 
+    <section id="sec-pick">
     <h2 class="section-head">
       Pick the ellipse
       <button type="button" id="help-btn" class="help-btn" aria-haspopup="dialog" title="How each mode picks an ellipse">?</button>
@@ -402,11 +573,15 @@
       <label>Third point (x, y)</label>
       <input type="text" id="through-xy" />
     </div>
+    </section>
 
+    <section id="sec-result">
     <h2>Result</h2>
     <div id="error-box" class="error-box" style="display:none"></div>
     <div class="results" id="results"></div>
+    </section>
 
+    <section id="sec-export">
     <h2>SVG export</h2>
     <div class="toggle-row">
       <input type="checkbox" id="yup-toggle" />
@@ -428,6 +603,7 @@
     </div>
 
     <button id="reset-btn">Reset to defaults</button>
+    </section>
   </div>
 
   <dialog id="help-dialog" aria-labelledby="help-title">

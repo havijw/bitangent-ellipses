@@ -31,21 +31,47 @@ export function autoSizeTextarea(node) {
   node.style.height = `${node.scrollHeight + 2}px`;
 }
 
-/** A draggable circle handle at `pos`, carrying `data-handle=id` for hit-testing. */
-export function makeDraggable(id, pos, r, color, sizeScale) {
-  const c = el('circle', { cx: pos.x, cy: pos.y, r: r * sizeScale, fill: color, stroke: '#0b1220', 'stroke-width': 2 });
+/**
+ * An invisible circle that makes a handle grabbable well beyond its drawn
+ * edge. A fingertip covers far more screen than the dot it aims at, so the
+ * drawn size stays a visual decision and this carries the hit-testing: it is
+ * painted (fill `transparent`, not `none`) so it takes pointer events, and it
+ * carries the same `data-handle` as the mark it sits under.
+ */
+function hitArea(id, pos, r) {
+  const c = el('circle', { cx: pos.x, cy: pos.y, r, fill: 'transparent' });
   c.dataset.handle = id;
   return c;
+}
+
+/**
+ * A draggable circle handle at `pos`, carrying `data-handle=id` for
+ * hit-testing. `r` and `hitR` are screen pixels; `pxScale` converts them to
+ * world units. Returns a group holding the grab area and the visible dot.
+ */
+export function makeDraggable(id, pos, r, color, pxScale, hitR = r) {
+  const g = el('g');
+  const c = el('circle', {
+    cx: pos.x,
+    cy: pos.y,
+    r: r * pxScale,
+    fill: color,
+    stroke: '#0b1220',
+    'stroke-width': 2,
+  });
+  c.dataset.handle = id;
+  g.append(hitArea(id, pos, Math.max(hitR, r) * pxScale), c);
+  return g;
 }
 
 /**
  * A draggable arrowhead marker centered at `pos`, pointing along `deg` (the
  * tangent direction). Behaves exactly like `makeDraggable` for hit-testing —
  * it carries `data-handle` so the same pointer logic drives it — it just draws
- * a triangle instead of a circle. `size` is the tip length in screen units.
+ * a triangle instead of a circle. `size` is the tip length in screen pixels.
  */
-export function makeArrowHandle(id, pos, deg, size, color, sizeScale) {
-  const s = size * sizeScale;
+export function makeArrowHandle(id, pos, deg, size, color, pxScale, hitR = size) {
+  const s = size * pxScale;
   const rad = (deg * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
@@ -67,5 +93,7 @@ export function makeArrowHandle(id, pos, deg, size, color, sizeScale) {
     'vector-effect': 'non-scaling-stroke',
   });
   tri.dataset.handle = id;
-  return tri;
+  const g = el('g');
+  g.append(hitArea(id, pos, Math.max(hitR, size) * pxScale), tri);
+  return g;
 }

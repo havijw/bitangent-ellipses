@@ -65,6 +65,23 @@ auto-executes everything in a `test/` directory.
 - **All reported/exported numbers are full precision** (shortest
   round-trippable form, no `toFixed`). Inputs parse losslessly and are never
   re-truncated on display.
+- **On-screen sizes are in CSS pixels, never a fraction of the canvas.**
+  Handles, hit areas and the tangent-stalk length are pixel sizes converted to
+  world units by `screenScale(view, canvasPixelWidth)`. The old
+  `view.w / VIEW_W` scale silently shrank the handles as the canvas narrowed,
+  which is what made them near-untappable on a phone; the "handle keeps its
+  on-screen size when the canvas narrows" check in `scripts/smoke.mjs` is the
+  guard. Touch devices get a wider *grab* radius, not a bigger drawn dot.
+- **The responsive drawer uses no JavaScript at all.** Below 760px the sidebar
+  stacks under the canvas, collapsed to the fifth-constraint controls, and the
+  wide arrow that expands it is a `<label>` driving the hidden `#panel-open`
+  checkbox that the stylesheet reads via `:checked ~ …`. It was a scripted
+  button once and broke in Safari — the control rendered but was inert,
+  because nothing about a stale, blocked or still-loading `ui.js` looks
+  different from a working one. Keep it declarative; `ui.js` must not learn
+  about it. The "opens with JavaScript disabled" check in `scripts/smoke.mjs`
+  is the guard. Sibling selectors can't reach `#sidebar` itself, which is why
+  its height cap applies in both states rather than only when open.
 
 ## Solver precision (be honest about this)
 
